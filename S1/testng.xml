@@ -1,0 +1,7 @@
+<suite name="Demo Web Shop Suite">
+    <test name="Login Feature">
+        <classes>
+            <class name="runners.TestRunner"/>
+        </classes>
+    </test>
+</suite>
