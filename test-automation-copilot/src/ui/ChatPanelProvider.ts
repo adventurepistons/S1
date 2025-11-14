@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { RecordingSession, ApplicationMap } from '../browser/types';
 import { WorkspaceAnalyzer } from '../core/analyzers/WorkspaceAnalyzer';
 import { StorageManager } from '../core/storage/StorageManager';
+import { CoreClient } from '../api/CoreClient';
 
 export class ChatPanelProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'testCopilot.chatView';
@@ -9,15 +12,18 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     private extensionUri: vscode.Uri;
     private storageManager: StorageManager;
     private workspaceAnalyzer: WorkspaceAnalyzer;
+    private coreClient: CoreClient;
 
     constructor(
         extensionUri: vscode.Uri,
         storageManager: StorageManager,
-        workspaceAnalyzer: WorkspaceAnalyzer
+        workspaceAnalyzer: WorkspaceAnalyzer,
+        coreClient: CoreClient
     ) {
         this.extensionUri = extensionUri;
         this.storageManager = storageManager;
         this.workspaceAnalyzer = workspaceAnalyzer;
+        this.coreClient = coreClient;
     }
 
     public resolveWebviewView(
@@ -284,11 +290,74 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         // TODO: Implement
     }
 
-    public requestPageObjectGeneration(session: RecordingSession): void {
-        this.sendResponse(
-            `Starting page object generation for ${session.pages.length} pages...\n` +
-            `(Implementation coming soon)`
-        );
+    public async requestPageObjectGeneration(session: RecordingSession): Promise<void> {
+        this.sendResponse(`Starting page object generation for ${session.pages.length} pages...`);
+
+        try {
+            // Check if Core Client is running
+            if (!this.coreClient.isRunning()) {
+                throw new Error('Copilot Core is not running. Please restart the extension.');
+            }
+
+            // Get workspace path
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                throw new Error('No workspace folder open');
+            }
+
+            const workspacePath = workspaceFolder.uri.fsPath;
+
+            // Generate code from recorded session
+            const generatedFiles = await this.coreClient.generateFromSession(session, 'selenium-java');
+
+            if (generatedFiles.length === 0) {
+                this.sendResponse('❌ No files generated. Please check the logs.');
+                return;
+            }
+
+            // Write generated files to workspace
+            let createdCount = 0;
+            for (const file of generatedFiles) {
+                const fullPath = path.join(workspacePath, file.filePath);
+
+                // Create directory if doesn't exist
+                const dir = path.dirname(fullPath);
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
+
+                // Write file
+                fs.writeFileSync(fullPath, file.content, 'utf8');
+                createdCount++;
+
+                this.sendResponse(`✅ Created: ${file.filePath}`);
+            }
+
+            this.sendResponse(
+                `\n🎉 Successfully generated ${createdCount} Page Object${createdCount > 1 ? 's' : ''}!\n` +
+                `\nFiles created in: src/test/java/pages/`
+            );
+
+            // Show success message
+            vscode.window.showInformationMessage(
+                `Generated ${createdCount} Page Objects!`,
+                'Open Files'
+            ).then(selection => {
+                if (selection === 'Open Files') {
+                    // Open first generated file
+                    if (generatedFiles.length > 0) {
+                        const firstFile = path.join(workspacePath, generatedFiles[0].filePath);
+                        vscode.workspace.openTextDocument(firstFile).then(doc => {
+                            vscode.window.showTextDocument(doc);
+                        });
+                    }
+                }
+            });
+
+        } catch (error) {
+            this.sendResponse(`❌ Error: ${error}`);
+            vscode.window.showErrorMessage(`Failed to generate Page Objects: ${error}`);
+        }
     }
 
     public showApplicationMap(map: ApplicationMap): void {

@@ -3,9 +3,39 @@ import { WorkspaceAnalyzer } from './core/analyzers/WorkspaceAnalyzer';
 import { ChatPanelProvider } from './ui/ChatPanelProvider';
 import { ElementRecorder } from './browser/ElementRecorder';
 import { StorageManager } from './core/storage/StorageManager';
+import { CoreClient } from './api/CoreClient';
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('Test Automation Copilot is now active!');
+
+    // Initialize Core Client (Go binary)
+    const coreClient = new CoreClient(context.extensionPath);
+    (global as any).testCopilotCoreClient = coreClient; // Store globally for deactivate
+
+    try {
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Starting Copilot Core...",
+            cancellable: false
+        }, async () => {
+            await coreClient.startServer();
+        });
+    } catch (error) {
+        vscode.window.showWarningMessage(
+            `Copilot Core failed to start: ${error}. Some features may be limited.`,
+            'Build Binary'
+        ).then(selection => {
+            if (selection === 'Build Binary') {
+                vscode.window.showInformationMessage(
+                    'Please build the Go binary:\ncd copilot-core && go build -o copilot-core main.go'
+                );
+            }
+        });
+    }
+
+    context.subscriptions.push({
+        dispose: () => coreClient.stopServer()
+    });
 
     // Initialize storage (SQLite + ChromaDB)
     const storageManager = new StorageManager(context.globalStorageUri.fsPath);
@@ -15,7 +45,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const workspaceAnalyzer = new WorkspaceAnalyzer(storageManager);
 
     // Initialize chat panel
-    const chatProvider = new ChatPanelProvider(context.extensionUri, storageManager, workspaceAnalyzer);
+    const chatProvider = new ChatPanelProvider(context.extensionUri, storageManager, workspaceAnalyzer, coreClient);
 
     // Initialize element recorder
     const elementRecorder = new ElementRecorder(chatProvider);
@@ -184,4 +214,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
     console.log('Test Automation Copilot deactivated');
+
+    // Stop Core Client server
+    const coreClient = (global as any).testCopilotCoreClient;
+    if (coreClient) {
+        coreClient.stopServer();
+    }
 }
