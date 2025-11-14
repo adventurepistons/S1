@@ -73,6 +73,51 @@ export async function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // Start Recording Session Command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('testCopilot.startRecording', async () => {
+            try {
+                await elementRecorder.startRecording();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to start recording: ${error}`);
+            }
+        })
+    );
+
+    // Stop Recording Session Command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('testCopilot.stopRecording', async () => {
+            try {
+                await elementRecorder.stopRecording();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to stop recording: ${error}`);
+            }
+        })
+    );
+
+    // Pause Recording Command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('testCopilot.pauseRecording', async () => {
+            try {
+                await elementRecorder.pauseRecording();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to pause recording: ${error}`);
+            }
+        })
+    );
+
+    // Resume Recording Command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('testCopilot.resumeRecording', async () => {
+            try {
+                await elementRecorder.resumeRecording();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to resume recording: ${error}`);
+            }
+        })
+    );
+
+    // Legacy recordElements command (for backward compatibility)
     context.subscriptions.push(
         vscode.commands.registerCommand('testCopilot.recordElements', async () => {
             const url = await vscode.window.showInputBox({

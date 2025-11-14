@@ -35,26 +35,50 @@
     "commands": [
       {
         "command": "testCopilot.openChat",
-        "title": "Open Test Copilot Chat",
+        "title": "Test Copilot: Open Chat",
         "icon": "$(comment-discussion)"
       },
       {
         "command": "testCopilot.analyzeWorkspace",
-        "title": "Analyze Test Framework",
+        "title": "Test Copilot: Analyze Framework",
         "icon": "$(refresh)"
       },
       {
+        "command": "testCopilot.startRecording",
+        "title": "Test Copilot: Start Recording Session",
+        "icon": "$(circle-filled)",
+        "category": "Recording"
+      },
+      {
+        "command": "testCopilot.stopRecording",
+        "title": "Test Copilot: Stop Recording",
+        "icon": "$(debug-stop)",
+        "category": "Recording"
+      },
+      {
+        "command": "testCopilot.pauseRecording",
+        "title": "Test Copilot: Pause Recording",
+        "icon": "$(debug-pause)",
+        "category": "Recording"
+      },
+      {
+        "command": "testCopilot.resumeRecording",
+        "title": "Test Copilot: Resume Recording",
+        "icon": "$(debug-continue)",
+        "category": "Recording"
+      },
+      {
         "command": "testCopilot.recordElements",
-        "title": "Record Page Elements",
+        "title": "Test Copilot: Record Page Elements (Legacy)",
         "icon": "$(record)"
       },
       {
         "command": "testCopilot.generateTest",
-        "title": "Generate Test Case"
+        "title": "Test Copilot: Generate Test Case"
       },
       {
         "command": "testCopilot.generatePageObject",
-        "title": "Generate Page Object"
+        "title": "Test Copilot: Generate Page Object"
       }
     ],
     "viewsContainers": {
