@@ -1,0 +1,144 @@
+{
+  "name": "test-automation-copilot",
+  "displayName": "Test Automation Copilot",
+  "description": "AI-powered assistant for Selenium/Playwright test automation - your QA copilot",
+  "version": "0.0.1",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Testing",
+    "Programming Languages",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "selenium",
+    "playwright",
+    "testing",
+    "qa",
+    "automation",
+    "ai",
+    "copilot"
+  ],
+  "activationEvents": [
+    "onLanguage:java",
+    "onLanguage:python",
+    "onLanguage:typescript",
+    "onLanguage:javascript",
+    "onCommand:testCopilot.openChat",
+    "onCommand:testCopilot.analyzeWorkspace",
+    "onCommand:testCopilot.recordElements"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "testCopilot.openChat",
+        "title": "Open Test Copilot Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "testCopilot.analyzeWorkspace",
+        "title": "Analyze Test Framework",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "testCopilot.recordElements",
+        "title": "Record Page Elements",
+        "icon": "$(record)"
+      },
+      {
+        "command": "testCopilot.generateTest",
+        "title": "Generate Test Case"
+      },
+      {
+        "command": "testCopilot.generatePageObject",
+        "title": "Generate Page Object"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "testCopilot",
+          "title": "Test Copilot",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "testCopilot": [
+        {
+          "type": "webview",
+          "id": "testCopilot.chatView",
+          "name": "Chat"
+        },
+        {
+          "id": "testCopilot.frameworkView",
+          "name": "Framework Structure"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Test Automation Copilot",
+      "properties": {
+        "testCopilot.llmProvider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai", "anthropic", "local"],
+          "description": "LLM provider to use"
+        },
+        "testCopilot.openaiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API Key (stored securely)"
+        },
+        "testCopilot.anthropicApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic API Key (stored securely)"
+        },
+        "testCopilot.autoAnalyze": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically analyze workspace on startup"
+        },
+        "testCopilot.framework": {
+          "type": "string",
+          "enum": ["selenium-java", "selenium-python", "playwright-ts", "playwright-js", "cypress"],
+          "description": "Test framework (auto-detected if not set)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run build",
+    "test": "node ./dist/test/runTest.js",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.2",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "openai": "^4.20.0",
+    "playwright": "^1.40.0",
+    "java-parser": "^2.0.0",
+    "tree-sitter": "^0.20.0",
+    "tree-sitter-java": "^0.20.0",
+    "better-sqlite3": "^9.2.0",
+    "chromadb": "^1.7.0",
+    "axios": "^1.6.0"
+  }
+}
