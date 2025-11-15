@@ -9,3 +9,5 @@ require (
 	github.com/sashabaranov/go-openai v1.20.0
 	github.com/smacker/go-tree-sitter v0.0.0-20231219031718-233c2f923ac7
 )
+
+require github.com/philippgille/chromem-go v0.5.0
