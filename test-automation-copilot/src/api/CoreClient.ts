@@ -2,18 +2,52 @@ import * as vscode from 'vscode';
 import * as child_process from 'child_process';
 import * as path from 'path';
 import axios, { AxiosInstance } from 'axios';
+import WebSocket from 'ws';
 import { RecordingSession } from '../browser/types';
+
+export interface WorkspaceStats {
+    files: number;
+    classes: number;
+    pageObjects: number;
+    testMethods: number;
+    vectorDocs: number;
+    collectionName: string;
+}
+
+export interface SearchResult {
+    id: string;
+    name: string;
+    content: string;
+    filePath: string;
+    type: string;
+    similarity: number;
+}
+
+export interface GenerationResult {
+    code: string;
+    tokensUsed: number;
+    model: string;
+    finishReason: string;
+}
+
+export interface ChatResponse {
+    response: string;
+    tokensUsed: number;
+    model: string;
+    finishReason: string;
+}
 
 export class CoreClient {
     private serverProcess?: child_process.ChildProcess;
     private axiosClient: AxiosInstance;
-    private port: number = 47823;
+    private wsClient?: WebSocket;
+    private port: number = 8080;
     private isServerRunning: boolean = false;
 
     constructor(private extensionPath: string) {
         this.axiosClient = axios.create({
             baseURL: `http://localhost:${this.port}`,
-            timeout: 30000, // 30 seconds
+            timeout: 60000, // 60 seconds for LLM operations
             headers: {
                 'Content-Type': 'application/json'
             }
@@ -38,10 +72,13 @@ export class CoreClient {
             }
 
             // Start the server process
-            this.serverProcess = child_process.spawn(binaryPath, ['server'], {
+            this.serverProcess = child_process.spawn(binaryPath, [
+                '--port', this.port.toString(),
+                '--db', path.join(this.extensionPath, 'data', 'copilot.db'),
+                '--vector', path.join(this.extensionPath, 'data', 'vectordb')
+            ], {
                 env: {
                     ...process.env,
-                    COPILOT_PORT: this.port.toString()
                 }
             });
 
@@ -74,6 +111,11 @@ export class CoreClient {
      * Stop the Go binary server
      */
     public stopServer(): void {
+        if (this.wsClient) {
+            this.wsClient.close();
+            this.wsClient = undefined;
+        }
+
         if (this.serverProcess) {
             this.serverProcess.kill();
             this.serverProcess = undefined;
@@ -83,83 +125,90 @@ export class CoreClient {
     }
 
     /**
-     * Analyze workspace
+     * Index workspace
      */
-    public async analyzeWorkspace(workspacePath: string): Promise<any> {
+    public async indexWorkspace(workspacePath: string): Promise<void> {
         try {
-            const response = await this.axiosClient.post('/analyze', {
+            await this.axiosClient.post('/api/v1/workspace/index', {
                 workspacePath
             });
+        } catch (error) {
+            throw this.handleError(error, 'Failed to index workspace');
+        }
+    }
+
+    /**
+     * Get workspace statistics
+     */
+    public async getWorkspaceStats(): Promise<WorkspaceStats> {
+        try {
+            const response = await this.axiosClient.get('/api/v1/workspace/stats');
             return response.data;
         } catch (error) {
-            throw this.handleError(error, 'Failed to analyze workspace');
+            throw this.handleError(error, 'Failed to get workspace stats');
         }
     }
 
     /**
-     * Chat with AI
+     * Search code semantically
      */
-    public async chat(message: string, workspacePath: string, context?: any): Promise<string> {
+    public async searchCode(query: string, limit: number = 10): Promise<SearchResult[]> {
         try {
-            const response = await this.axiosClient.post('/chat', {
-                message,
-                workspacePath,
-                context: context || {}
+            const response = await this.axiosClient.post('/api/v1/search/code', {
+                query,
+                limit
             });
-            return response.data.response;
+            return response.data.results || [];
         } catch (error) {
-            throw this.handleError(error, 'Failed to chat with AI');
+            throw this.handleError(error, 'Failed to search code');
         }
     }
 
     /**
-     * Generate code from recorded session
+     * Search page objects
      */
-    public async generateFromSession(session: RecordingSession, framework: string = 'selenium-java'): Promise<any[]> {
+    public async searchPageObjects(query: string, limit: number = 5): Promise<SearchResult[]> {
         try {
-            const response = await this.axiosClient.post('/generate', {
-                type: 'session',
-                sessionData: {
-                    pages: session.pages.map(page => ({
-                        url: page.url,
-                        title: page.title,
-                        elements: page.elements.map(elem => ({
-                            id: elem.id,
-                            name: elem.text || elem.id || 'unnamed',
-                            text: elem.text,
-                            tagName: elem.tagName,
-                            locatorType: elem.recommendedLocator.type,
-                            locatorValue: elem.recommendedLocator.value,
-                            interactionType: elem.interactionType,
-                            attributes: elem.attributes,
-                            recommendedLocator: elem.recommendedLocator
-                        })),
-                        interactions: page.interactions
-                    })),
-                    framework
-                }
+            const response = await this.axiosClient.post('/api/v1/search/pageobjects', {
+                query,
+                limit
             });
-
-            return response.data.generatedFiles || [];
+            return response.data.results || [];
         } catch (error) {
-            throw this.handleError(error, 'Failed to generate code from session');
+            throw this.handleError(error, 'Failed to search page objects');
         }
     }
 
     /**
-     * Generate single page object
+     * Search tests
      */
-    public async generatePageObject(spec: string, elements: any[], framework: string = 'selenium-java', existingCode?: any[]): Promise<any> {
+    public async searchTests(query: string, limit: number = 5): Promise<SearchResult[]> {
         try {
-            const response = await this.axiosClient.post('/generate', {
-                type: 'pageObject',
-                specification: spec,
-                elements,
-                framework,
-                existingCode: existingCode || []
+            const response = await this.axiosClient.post('/api/v1/search/tests', {
+                query,
+                limit
             });
+            return response.data.results || [];
+        } catch (error) {
+            throw this.handleError(error, 'Failed to search tests');
+        }
+    }
 
-            return response.data;
+    /**
+     * Generate page object
+     */
+    public async generatePageObject(spec: string, elements: any[]): Promise<GenerationResult> {
+        try {
+            const response = await this.axiosClient.post('/api/v1/generate/pageobject', {
+                spec,
+                elements
+            });
+            return {
+                code: response.data.code,
+                tokensUsed: response.data.tokensUsed,
+                model: response.data.model,
+                finishReason: response.data.finishReason
+            };
         } catch (error) {
             throw this.handleError(error, 'Failed to generate page object');
         }
@@ -168,37 +217,200 @@ export class CoreClient {
     /**
      * Generate test case
      */
-    public async generateTest(spec: string, pageObjects: any[], framework: string = 'selenium-java'): Promise<any> {
+    public async generateTest(spec: string): Promise<GenerationResult> {
         try {
-            const response = await this.axiosClient.post('/generate', {
-                type: 'test',
-                specification: spec,
-                context: {
-                    pageObjects
-                },
-                framework
+            const response = await this.axiosClient.post('/api/v1/generate/test', {
+                spec
             });
-
-            return response.data;
+            return {
+                code: response.data.code,
+                tokensUsed: response.data.tokensUsed,
+                model: response.data.model,
+                finishReason: response.data.finishReason
+            };
         } catch (error) {
             throw this.handleError(error, 'Failed to generate test');
         }
     }
 
     /**
-     * Semantic search in workspace
+     * Fix broken code
      */
-    public async search(query: string, workspacePath: string, topK: number = 5): Promise<any[]> {
+    public async fixCode(code: string, error: string): Promise<GenerationResult> {
         try {
-            const response = await this.axiosClient.post('/search', {
-                query,
-                workspacePath,
-                topK
+            const response = await this.axiosClient.post('/api/v1/generate/fix', {
+                code,
+                error
             });
-            return response.data;
+            return {
+                code: response.data.fix,
+                tokensUsed: response.data.tokensUsed,
+                model: response.data.model,
+                finishReason: response.data.finishReason
+            };
         } catch (error) {
-            throw this.handleError(error, 'Failed to search');
+            throw this.handleError(error, 'Failed to fix code');
         }
+    }
+
+    /**
+     * Chat with AI
+     */
+    public async chat(message: string): Promise<ChatResponse> {
+        try {
+            const response = await this.axiosClient.post('/api/v1/chat/message', {
+                message
+            });
+            return {
+                response: response.data.response,
+                tokensUsed: response.data.tokensUsed,
+                model: response.data.model,
+                finishReason: response.data.finishReason
+            };
+        } catch (error) {
+            throw this.handleError(error, 'Failed to chat with AI');
+        }
+    }
+
+    /**
+     * Get all classes from database
+     */
+    public async getClasses(): Promise<any[]> {
+        try {
+            const response = await this.axiosClient.get('/api/v1/db/classes');
+            return response.data.classes || [];
+        } catch (error) {
+            throw this.handleError(error, 'Failed to get classes');
+        }
+    }
+
+    /**
+     * Get specific class
+     */
+    public async getClass(id: number): Promise<any> {
+        try {
+            const response = await this.axiosClient.get(`/api/v1/db/classes/${id}`);
+            return response.data.class;
+        } catch (error) {
+            throw this.handleError(error, 'Failed to get class');
+        }
+    }
+
+    /**
+     * Get methods by class ID
+     */
+    public async getMethodsByClass(classId: number): Promise<any[]> {
+        try {
+            const response = await this.axiosClient.get(`/api/v1/db/methods/${classId}`);
+            return response.data.methods || [];
+        } catch (error) {
+            throw this.handleError(error, 'Failed to get methods');
+        }
+    }
+
+    /**
+     * Generate code with streaming (WebSocket)
+     */
+    public async generateWithStreaming(
+        action: 'pageobject' | 'test' | 'chat' | 'fix',
+        payload: any,
+        onChunk: (chunk: string) => void,
+        onComplete: (result: GenerationResult) => void,
+        onError: (error: string) => void
+    ): Promise<void> {
+        return new Promise((resolve, reject) => {
+            try {
+                // Create WebSocket connection
+                this.wsClient = new WebSocket(`ws://localhost:${this.port}/ws/stream`);
+
+                this.wsClient.on('open', () => {
+                    // Send request
+                    const request = {
+                        type: 'request',
+                        payload: {
+                            action,
+                            ...payload
+                        }
+                    };
+                    this.wsClient!.send(JSON.stringify(request));
+                });
+
+                this.wsClient.on('message', (data: WebSocket.Data) => {
+                    try {
+                        const message = JSON.parse(data.toString());
+
+                        switch (message.type) {
+                            case 'chunk':
+                                onChunk(message.payload.chunk);
+                                break;
+
+                            case 'complete':
+                                const result: GenerationResult = {
+                                    code: message.payload.content,
+                                    tokensUsed: message.payload.tokensUsed,
+                                    model: message.payload.model,
+                                    finishReason: message.payload.finishReason
+                                };
+                                onComplete(result);
+                                this.wsClient?.close();
+                                resolve();
+                                break;
+
+                            case 'error':
+                                onError(message.payload.error);
+                                this.wsClient?.close();
+                                reject(new Error(message.payload.error));
+                                break;
+                        }
+                    } catch (err) {
+                        console.error('Failed to parse WebSocket message:', err);
+                    }
+                });
+
+                this.wsClient.on('error', (err) => {
+                    onError(err.message);
+                    reject(err);
+                });
+
+                this.wsClient.on('close', () => {
+                    this.wsClient = undefined;
+                });
+
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    /**
+     * Generate code from recorded session (legacy compatibility)
+     */
+    public async generateFromSession(session: RecordingSession, framework: string = 'selenium-java'): Promise<any[]> {
+        const generatedFiles: any[] = [];
+
+        // Generate page objects for each page
+        for (const page of session.pages) {
+            try {
+                const result = await this.generatePageObject(
+                    `Page object for ${page.title || page.url}`,
+                    page.elements.map(elem => ({
+                        name: elem.text || elem.id || 'unnamed',
+                        locatorType: elem.recommendedLocator.type,
+                        locatorValue: elem.recommendedLocator.value
+                    }))
+                );
+
+                generatedFiles.push({
+                    type: 'pageObject',
+                    name: this.getPageObjectName(page.title || page.url),
+                    code: result.code
+                });
+            } catch (error) {
+                console.error(`Failed to generate page object for ${page.url}:`, error);
+            }
+        }
+
+        return generatedFiles;
     }
 
     /**
@@ -207,7 +419,7 @@ export class CoreClient {
     public async checkHealth(): Promise<boolean> {
         try {
             const response = await this.axiosClient.get('/health');
-            return response.data.status === 'ok';
+            return response.data.status === 'healthy';
         } catch (error) {
             return false;
         }
@@ -216,7 +428,7 @@ export class CoreClient {
     /**
      * Wait for server to be ready
      */
-    private async waitForServer(maxAttempts: number = 10): Promise<void> {
+    private async waitForServer(maxAttempts: number = 30): Promise<void> {
         for (let i = 0; i < maxAttempts; i++) {
             await this.sleep(1000); // Wait 1 second
 
@@ -233,10 +445,14 @@ export class CoreClient {
      */
     private findBinary(): string | null {
         const possiblePaths = [
-            path.join(this.extensionPath, 'copilot-core', 'copilot-core'),
-            path.join(this.extensionPath, 'copilot-core', 'copilot-core.exe'),
-            path.join(this.extensionPath, 'bin', 'copilot-core'),
-            path.join(this.extensionPath, 'bin', 'copilot-core.exe'),
+            // Development paths
+            path.join(this.extensionPath, 'copilot-core', 'cmd', 'server', 'server'),
+            path.join(this.extensionPath, 'copilot-core', 'cmd', 'server', 'server.exe'),
+            // Production paths
+            path.join(this.extensionPath, 'bin', 'test-copilot-server'),
+            path.join(this.extensionPath, 'bin', 'test-copilot-server.exe'),
+            path.join(this.extensionPath, 'copilot-core', 'test-copilot-server'),
+            path.join(this.extensionPath, 'copilot-core', 'test-copilot-server.exe'),
         ];
 
         for (const p of possiblePaths) {
@@ -272,4 +488,23 @@ export class CoreClient {
     public isRunning(): boolean {
         return this.isServerRunning;
     }
+
+    /**
+     * Get page object name from URL/title
+     */
+    private getPageObjectName(urlOrTitle: string): string {
+        // Convert URL or title to PascalCase class name
+        const cleaned = urlOrTitle
+            .replace(/https?:\/\//, '')
+            .replace(/[^a-zA-Z0-9]/g, ' ')
+            .trim();
+
+        const words = cleaned.split(/\s+/);
+        const pascalCase = words
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join('');
+
+        return `${pascalCase}Page`;
+    }
 }
+
