@@ -8,8 +8,8 @@
 | **Frontend** | TypeScript/Node.js | Apache 2.0 | ✅ FREE |
 | **Relational DB** | SQLite | Public Domain | ✅ FREE |
 | **Vector DB** | ChromaDB | Apache 2.0 | ✅ FREE |
-| **LLM** | Ollama (Llama 3.1) | MIT | ✅ FREE (runs locally) |
-| **Embeddings** | all-MiniLM-L6-v2 | Apache 2.0 | ✅ FREE (runs locally) |
+| **LLM** | OpenAI GPT-4 | Commercial API | 💰 Pay-per-use (~$0.03/1K tokens) |
+| **Embeddings** | OpenAI text-embedding-3-small | Commercial API | 💰 Pay-per-use (~$0.0001/1K tokens) |
 | **Code Parser** | Tree-sitter | MIT | ✅ FREE |
 | **Browser Automation** | Playwright | Apache 2.0 | ✅ FREE |
 | **HTTP Server** | Go net/http | BSD 3-Clause | ✅ FREE |
@@ -119,13 +119,13 @@ require (
 **Why chromem-go instead of ChromaDB:**
 - ✅ Pure Go implementation (no Python dependency)
 - ✅ Embedded (no separate server)
-- ✅ Uses Ollama for embeddings
+- ✅ Uses OpenAI for embeddings (text-embedding-3-small)
 - ✅ Apache 2.0 license
 - ✅ Fast and lightweight
 
 **Implementation:**
 
-1. Use Ollama's embedding endpoint for text-embedding
+1. Use OpenAI's text-embedding-3-small for embeddings
 2. Store embeddings in chromem-go
 3. Implement semantic search
 4. Index all methods, classes, comments
@@ -136,14 +136,14 @@ require (
 
 ### **Phase 2: LLM Integration** (Days 6-8)
 
-#### **Day 6: Ollama Integration**
+#### **Day 6: OpenAI Integration**
 
 **Files to Create:**
 ```
 copilot-core/
 ├── pkg/
 │   └── llm/
-│       ├── ollama_client.go        (Ollama API client)
+│       ├── openai_client.go        (OpenAI API client)
 │       ├── prompt_builder.go       (Build prompts with context)
 │       ├── response_parser.go      (Parse LLM responses)
 │       ├── streaming.go            (Stream responses via WebSocket)
@@ -153,38 +153,37 @@ copilot-core/
 **Dependencies:**
 ```go
 require (
-    github.com/ollama/ollama v0.1.0            // MIT license ✅
+    github.com/sashabaranov/go-openai v1.20.0  // Apache 2.0 ✅ (Already in go.mod)
 )
 ```
 
-**Setup Ollama:**
+**Setup OpenAI:**
 ```bash
-# Install Ollama (one-time setup)
-curl -fsSL https://ollama.com/install.sh | sh
+# Set API key as environment variable
+export OPENAI_API_KEY="sk-..."
 
-# Pull Llama 3.1 model (8B - fast, or 70B - powerful)
-ollama pull llama3.1:8b
-
-# Start Ollama server
-ollama serve
+# Or in .env file
+echo "OPENAI_API_KEY=sk-..." > .env
 ```
 
-**Why Ollama:**
-- ✅ FREE (MIT license)
-- ✅ Runs locally (no API costs)
-- ✅ Fast (GPU accelerated)
-- ✅ Multiple models (Llama, Mistral, CodeLlama)
-- ✅ Good for code generation
-- ✅ Privacy (no data sent to cloud)
+**Why OpenAI GPT-4:**
+- ✅ Best-in-class quality (10/10)
+- ✅ Excellent code generation
+- ✅ Fast response times (~500ms)
+- ✅ No local GPU required
+- ✅ Reliable and well-documented API
+- 💰 Pay-per-use (~$0.03/1K tokens)
+- 💰 Typical cost: $10-30/month for moderate usage
 
 **Implementation:**
 
-1. HTTP client to Ollama API (localhost:11434)
+1. HTTP client to OpenAI API (api.openai.com)
 2. Prompt builder with context
-3. Streaming support
+3. Streaming support via Server-Sent Events
 4. Response parsing (extract file changes)
+5. API key management and validation
 
-**Deliverable:** Working LLM integration with local model
+**Deliverable:** Working LLM integration with GPT-4
 
 ---
 
@@ -209,7 +208,7 @@ copilot-core/
 3. **Relationship graph:** Add dependencies (SQLite)
 4. **Context builder:** Gather file contents with line numbers
 5. **Build prompt:** System prompt + context + user question
-6. **Send to Ollama:** Get response
+6. **Send to OpenAI GPT-4:** Get response
 7. **Parse response:** Extract file changes
 
 **Deliverable:** Smart context retrieval that sends relevant code to LLM
@@ -581,37 +580,44 @@ require (
 
 ---
 
-## 💰 Cost Analysis (100% Free)
+## 💰 Cost Analysis
 
 | Component | Traditional Cost | Our Solution | Cost |
 |-----------|-----------------|--------------|------|
-| **LLM (GPT-4)** | $0.03/1K tokens | Ollama (Llama 3.1 local) | $0 ✅ |
-| **Embeddings** | $0.0001/1K tokens | Local model | $0 ✅ |
+| **LLM** | GPT-4 API | OpenAI GPT-4 | ~$10-30/mo 💰 |
+| **Embeddings** | text-embedding-3 | OpenAI embeddings | ~$1-5/mo 💰 |
 | **Vector DB** | ChromaDB cloud ($20/mo) | chromem-go (embedded) | $0 ✅ |
 | **Relational DB** | PostgreSQL cloud ($10/mo) | SQLite (embedded) | $0 ✅ |
-| **Total Monthly** | ~$50-100/mo | | **$0** ✅ |
+| **Total Monthly** | ~$50-100/mo | | **~$15-40/mo** 💰 |
 
-**Only Cost:** One-time hardware (GPU for faster LLM inference - optional)
+**Cost Breakdown:**
+- OpenAI GPT-4: $0.03/1K input tokens, $0.06/1K output tokens
+- OpenAI Embeddings: $0.00013/1K tokens
+- Typical usage: 300K tokens/month = ~$15-20/month
+- Heavy usage: 1M tokens/month = ~$40-60/month
 
 ---
 
 ## 🎯 Why This Stack Works
 
-### **Ollama vs OpenAI:**
+### **Why OpenAI GPT-4:**
 
-| Feature | OpenAI GPT-4 | Ollama (Llama 3.1) |
+| Feature | OpenAI GPT-4 | Local Models (Ollama) |
 |---------|-------------|-------------------|
-| **Cost** | $0.03/1K tokens | FREE ✅ |
-| **Speed** | ~500ms | ~200ms (local) ✅ |
+| **Cost** | ~$15-40/mo | FREE ✅ |
+| **Speed** | ~500ms | ~2-5s (local) |
 | **Privacy** | Data sent to cloud | Runs locally ✅ |
 | **Offline** | Requires internet | Works offline ✅ |
-| **Quality** | Excellent (10/10) | Very Good (8/10) |
-| **Code Generation** | Excellent | Good with CodeLlama |
+| **Quality** | Excellent (10/10) ✅ | Good (7-8/10) |
+| **Code Generation** | Excellent ✅ | Good |
+| **Setup** | API key only ✅ | Requires GPU/setup |
 
-**Recommendation:**
-- Start with Llama 3.1:8b (fast, good quality)
-- Can upgrade to Llama 3.1:70b for better quality
-- Can use CodeLlama for code-specific tasks
+**Decision:**
+- Using OpenAI GPT-4 for best quality and reliability
+- No local GPU required
+- Simple setup with API key
+- Cost: ~$15-40/month for typical usage
+- Can switch to local models later if needed
 
 ### **chromem-go vs ChromaDB:**
 

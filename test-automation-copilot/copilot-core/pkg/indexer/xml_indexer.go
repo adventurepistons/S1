@@ -12,7 +12,7 @@ import (
 // XMLIndexer indexes XML files (pom.xml, testng.xml)
 type XMLIndexer struct {
 	db        *database.DB
-	pomParser *parser.POMParser
+	pomParser *parser.PomParser
 	// testngParser *parser.TestNGParser // Can add later if needed
 }
 
@@ -20,7 +20,7 @@ type XMLIndexer struct {
 func NewXMLIndexer(db *database.DB) *XMLIndexer {
 	return &XMLIndexer{
 		db:        db,
-		pomParser: parser.NewPOMParser(),
+		pomParser: parser.NewPomParser(),
 	}
 }
 
@@ -42,7 +42,7 @@ func (idx *XMLIndexer) IndexFile(file *database.File, content string) error {
 // indexPOM indexes a pom.xml file
 func (idx *XMLIndexer) indexPOM(file *database.File, content string) error {
 	// Parse POM
-	pom, err := idx.pomParser.Parse(content, file.Path)
+	pom, err := idx.pomParser.ParseFile(file.Path)
 	if err != nil {
 		return fmt.Errorf("failed to parse POM: %w", err)
 	}

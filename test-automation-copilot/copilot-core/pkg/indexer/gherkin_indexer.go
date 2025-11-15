@@ -26,7 +26,7 @@ func NewGherkinIndexer(db *database.DB) *GherkinIndexer {
 // IndexFile indexes a Gherkin feature file
 func (idx *GherkinIndexer) IndexFile(file *database.File, content string) error {
 	// Parse Gherkin file
-	parseResult, err := idx.parser.Parse(content, file.Path)
+	featureFile, err := idx.parser.ParseFile(file.Path)
 	if err != nil {
 		return fmt.Errorf("failed to parse Gherkin file: %w", err)
 	}
@@ -40,15 +40,15 @@ func (idx *GherkinIndexer) IndexFile(file *database.File, content string) error 
 		}
 
 		// Create feature record
-		tagsJSON, _ := json.Marshal(parseResult.Tags)
+		tagsJSON, _ := json.Marshal(featureFile.Feature.Tags)
 		tagsStr := string(tagsJSON)
 
 		result, err := tx.Exec(`
 			INSERT INTO feature_files (file_id, feature_name, description, tags, language)
 			VALUES (?, ?, ?, ?, ?)`,
 			file.ID,
-			parseResult.FeatureName,
-			database.StringPtr(parseResult.Description),
+			featureFile.Feature.Name,
+			database.StringPtr(featureFile.Feature.Description),
 			&tagsStr,
 			"en",
 		)
@@ -62,8 +62,8 @@ func (idx *GherkinIndexer) IndexFile(file *database.File, content string) error 
 		}
 
 		// Index scenarios
-		for _, scenario := range parseResult.Scenarios {
-			if err := idx.indexScenario(tx, featureID, scenario); err != nil {
+		for i, scenario := range featureFile.Scenarios {
+			if err := idx.indexScenario(tx, featureID, scenario, i); err != nil {
 				return fmt.Errorf("failed to index scenario %s: %w", scenario.Name, err)
 			}
 		}
@@ -73,10 +73,20 @@ func (idx *GherkinIndexer) IndexFile(file *database.File, content string) error 
 }
 
 // indexScenario indexes a single scenario
-func (idx *GherkinIndexer) indexScenario(tx *sqlx.Tx, featureID int64, scenario parser.Scenario) error {
+func (idx *GherkinIndexer) indexScenario(tx *sqlx.Tx, featureID int64, scenario parser.ScenarioInfo, scenarioIndex int) error {
 	// Convert tags to JSON
 	tagsJSON, _ := json.Marshal(scenario.Tags)
 	tagsStr := string(tagsJSON)
+
+	// Determine scenario type
+	scenarioType := "scenario"
+	if scenario.Type == "Scenario Outline" {
+		scenarioType = "scenario_outline"
+	}
+
+	// Calculate approximate start and end lines
+	startLine := scenarioIndex * 10 // Approximate
+	endLine := startLine + len(scenario.Steps) + 5
 
 	// Insert scenario
 	result, err := tx.Exec(`
@@ -84,11 +94,11 @@ func (idx *GherkinIndexer) indexScenario(tx *sqlx.Tx, featureID int64, scenario 
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		featureID,
 		scenario.Name,
-		scenario.Type, // "scenario" or "scenario_outline"
-		database.StringPtr(scenario.Description),
+		scenarioType,
+		nil, // Description not in parser.ScenarioInfo
 		&tagsStr,
-		scenario.StartLine,
-		scenario.EndLine,
+		startLine,
+		endLine,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert scenario: %w", err)
@@ -110,7 +120,7 @@ func (idx *GherkinIndexer) indexScenario(tx *sqlx.Tx, featureID int64, scenario 
 }
 
 // indexStep indexes a single step
-func (idx *GherkinIndexer) indexStep(tx *sqlx.Tx, scenarioID int64, step parser.Step) error {
+func (idx *GherkinIndexer) indexStep(tx *sqlx.Tx, scenarioID int64, step parser.StepInfo) error {
 	// Insert step
 	_, err := tx.Exec(`
 		INSERT INTO steps (scenario_id, keyword, text, argument, line_number)
@@ -118,8 +128,8 @@ func (idx *GherkinIndexer) indexStep(tx *sqlx.Tx, scenarioID int64, step parser.
 		scenarioID,
 		step.Keyword,
 		step.Text,
-		database.StringPtr(step.Argument), // DataTable or DocString
-		step.LineNumber,
+		nil, // Argument not in parser.StepInfo
+		step.Line,
 	)
 
 	return err

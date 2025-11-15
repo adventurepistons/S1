@@ -35,13 +35,13 @@ func NewJavaIndexer(db *database.DB) *JavaIndexer {
 // IndexFile indexes a Java file
 func (idx *JavaIndexer) IndexFile(file *database.File, content string) error {
 	// Parse Java file
-	parseResult, err := idx.parser.Parse(content, file.Path)
+	parsedClass, err := idx.parser.ParseFile(file.Path)
 	if err != nil {
 		return fmt.Errorf("failed to parse Java file: %w", err)
 	}
 
 	// Extract package name
-	packageName := parseResult.PackageName
+	packageName := parsedClass.Package
 	if packageName != "" {
 		file.PackageName = &packageName
 	}
@@ -51,11 +51,9 @@ func (idx *JavaIndexer) IndexFile(file *database.File, content string) error {
 		// Delete old data for this file (cascade will handle related records)
 		idx.classRepo.DeleteByFileID(file.ID)
 
-		// Index each class/interface/enum
-		for _, cls := range parseResult.Classes {
-			if err := idx.indexClass(tx, file, cls, packageName); err != nil {
-				return fmt.Errorf("failed to index class %s: %w", cls.Name, err)
-			}
+		// Index the class
+		if err := idx.indexClass(tx, file, parsedClass); err != nil {
+			return fmt.Errorf("failed to index class %s: %w", parsedClass.ClassName, err)
 		}
 
 		return nil
@@ -63,36 +61,38 @@ func (idx *JavaIndexer) IndexFile(file *database.File, content string) error {
 }
 
 // indexClass indexes a single class/interface/enum
-func (idx *JavaIndexer) indexClass(tx *sqlx.Tx, file *database.File, cls parser.Class, packageName string) error {
+func (idx *JavaIndexer) indexClass(tx *sqlx.Tx, file *database.File, parsedClass *parser.ParsedClass) error {
 	// Determine fully qualified name
-	fqn := cls.Name
-	if packageName != "" {
-		fqn = packageName + "." + cls.Name
+	fqn := parsedClass.ClassName
+	if parsedClass.Package != "" {
+		fqn = parsedClass.Package + "." + parsedClass.ClassName
 	}
 
 	// Convert annotations to JSON
-	annotationsJSON, _ := json.Marshal(cls.Annotations)
+	annotationsJSON, _ := json.Marshal(parsedClass.Annotations)
 	annotationsStr := string(annotationsJSON)
 
-	// Convert implements to JSON
-	implementsJSON, _ := json.Marshal(cls.Implements)
-	implementsStr := string(implementsJSON)
+	// Convert implements to JSON (empty for now, as ParsedClass doesn't have this)
+	implementsStr := "[]"
+
+	// Determine class type
+	classType := determineClassType(parsedClass.Type)
 
 	// Create class record
 	class := &database.Class{
 		FileID:               file.ID,
-		Name:                 cls.Name,
+		Name:                 parsedClass.ClassName,
 		FullyQualifiedName:   fqn,
-		Type:                 cls.Type, // "class", "interface", "enum"
-		PackageName:          &packageName,
-		IsAbstract:           cls.IsAbstract,
-		IsPublic:             cls.IsPublic,
-		ExtendsClass:         database.StringPtr(cls.Extends),
+		Type:                 classType,
+		PackageName:          database.StringPtr(parsedClass.Package),
+		IsAbstract:           false, // Not provided by parser
+		IsPublic:             true,  // Assume public
+		ExtendsClass:         database.StringPtr(parsedClass.SuperClass),
 		ImplementsInterfaces: &implementsStr,
 		Annotations:          &annotationsStr,
-		Javadoc:              database.StringPtr(cls.Javadoc),
-		StartLine:            cls.StartLine,
-		EndLine:              cls.EndLine,
+		Javadoc:              nil,
+		StartLine:            1, // Not provided by parser
+		EndLine:              100, // Not provided by parser
 	}
 
 	// Insert class
@@ -101,14 +101,14 @@ func (idx *JavaIndexer) indexClass(tx *sqlx.Tx, file *database.File, cls parser.
 	}
 
 	// Index fields
-	for _, field := range cls.Fields {
+	for _, field := range parsedClass.Fields {
 		if err := idx.indexField(tx, class, field); err != nil {
 			return fmt.Errorf("failed to index field %s: %w", field.Name, err)
 		}
 	}
 
 	// Index methods
-	for _, method := range cls.Methods {
+	for _, method := range parsedClass.Methods {
 		if err := idx.indexMethod(tx, class, method); err != nil {
 			return fmt.Errorf("failed to index method %s: %w", method.Name, err)
 		}
@@ -118,41 +118,38 @@ func (idx *JavaIndexer) indexClass(tx *sqlx.Tx, file *database.File, cls parser.
 }
 
 // indexField indexes a class field
-func (idx *JavaIndexer) indexField(tx *sqlx.Tx, class *database.Class, fld parser.Field) error {
+func (idx *JavaIndexer) indexField(tx *sqlx.Tx, class *database.Class, fld parser.FieldInfo) error {
 	// Convert annotations to JSON
 	annotationsJSON, _ := json.Marshal(fld.Annotations)
 	annotationsStr := string(annotationsJSON)
 
-	// Extract @FindBy locator information
+	// Use locator info from parser
 	var locatorType, locatorValue *string
-	for _, ann := range fld.Annotations {
-		if ann.Name == "FindBy" {
-			// Parse @FindBy(id = "username") or @FindBy(xpath = "//input[@id='username']")
-			locatorType, locatorValue = idx.extractFindByLocator(ann)
-			break
-		}
+	if fld.LocatorType != "" {
+		locatorType = &fld.LocatorType
+		locatorValue = &fld.LocatorValue
 	}
 
 	field := &database.Field{
 		ClassID:      class.ID,
 		Name:         fld.Name,
 		Type:         fld.Type,
-		IsPublic:     fld.IsPublic,
-		IsStatic:     fld.IsStatic,
-		IsFinal:      fld.IsFinal,
+		IsPublic:     false, // Not provided by parser
+		IsStatic:     false, // Not provided by parser
+		IsFinal:      false, // Not provided by parser
 		Annotations:  &annotationsStr,
-		DefaultValue: database.StringPtr(fld.DefaultValue),
+		DefaultValue: nil,
 		LocatorType:  locatorType,
 		LocatorValue: locatorValue,
-		Javadoc:      database.StringPtr(fld.Javadoc),
-		StartLine:    fld.StartLine,
+		Javadoc:      nil,
+		StartLine:    1, // Not provided by parser
 	}
 
 	return idx.fieldRepo.CreateTx(tx, field)
 }
 
 // indexMethod indexes a method
-func (idx *JavaIndexer) indexMethod(tx *sqlx.Tx, class *database.Class, mth parser.Method) error {
+func (idx *JavaIndexer) indexMethod(tx *sqlx.Tx, class *database.Class, mth parser.MethodInfo) error {
 	// Convert parameters to JSON
 	paramsJSON, _ := json.Marshal(mth.Parameters)
 	paramsStr := string(paramsJSON)
@@ -161,20 +158,23 @@ func (idx *JavaIndexer) indexMethod(tx *sqlx.Tx, class *database.Class, mth pars
 	annotationsJSON, _ := json.Marshal(mth.Annotations)
 	annotationsStr := string(annotationsJSON)
 
+	// Build signature
+	signature := buildSignature(mth)
+
 	method := &database.Method{
 		ClassID:     class.ID,
 		Name:        mth.Name,
-		Signature:   mth.Signature,
+		Signature:   signature,
 		ReturnType:  database.StringPtr(mth.ReturnType),
 		Parameters:  &paramsStr,
-		IsPublic:    mth.IsPublic,
-		IsStatic:    mth.IsStatic,
-		IsAbstract:  mth.IsAbstract,
+		IsPublic:    true, // Assume public
+		IsStatic:    false,
+		IsAbstract:  false,
 		Annotations: &annotationsStr,
-		Javadoc:     database.StringPtr(mth.Javadoc),
+		Javadoc:     nil,
 		Body:        database.StringPtr(mth.Body),
-		StartLine:   mth.StartLine,
-		EndLine:     mth.EndLine,
+		StartLine:   1,  // Not provided by parser
+		EndLine:     10, // Not provided by parser
 	}
 
 	if err := idx.methodRepo.CreateTx(tx, method); err != nil {
@@ -183,7 +183,7 @@ func (idx *JavaIndexer) indexMethod(tx *sqlx.Tx, class *database.Class, mth pars
 
 	// Index step definitions if this is a Cucumber step
 	for _, ann := range mth.Annotations {
-		if idx.isStepAnnotation(ann.Name) {
+		if idx.isStepAnnotation(ann) {
 			// This is a step definition
 			// Extract pattern from annotation
 			pattern := idx.extractStepPattern(ann)
@@ -191,12 +191,19 @@ func (idx *JavaIndexer) indexMethod(tx *sqlx.Tx, class *database.Class, mth pars
 				stepDef := &database.StepDefinition{
 					MethodID: method.ID,
 					Pattern:  pattern,
-					Keyword:  database.StringPtr(idx.getStepKeyword(ann.Name)),
+					Keyword:  database.StringPtr(idx.getStepKeyword(ann)),
 				}
 				// Insert step definition
-				// Note: We need a StepDefinitionRepository
-				// For now, we'll skip this
-				_ = stepDef
+				_, err := tx.Exec(`
+					INSERT INTO step_definitions (method_id, pattern, keyword)
+					VALUES (?, ?, ?)`,
+					stepDef.MethodID,
+					stepDef.Pattern,
+					stepDef.Keyword,
+				)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -301,51 +308,64 @@ func (idx *JavaIndexer) BuildDependencyGraph() error {
 
 // Helper functions
 
-func (idx *JavaIndexer) extractFindByLocator(ann parser.Annotation) (*string, *string) {
-	// Parse annotation parameters
-	// Example: @FindBy(id = "username") -> ("id", "username")
-	// Example: @FindBy(xpath = "//input[@id='username']") -> ("xpath", "//input[@id='username']")
-
-	for _, param := range ann.Parameters {
-		// param format: "id = \"username\""
-		parts := strings.SplitN(param, "=", 2)
-		if len(parts) == 2 {
-			locType := strings.TrimSpace(parts[0])
-			locValue := strings.Trim(strings.TrimSpace(parts[1]), "\"")
-			return &locType, &locValue
-		}
+func determineClassType(parserType string) string {
+	// Convert parser type to database type
+	// Parser types: "pageObject", "test", "step", "utility", "unknown"
+	switch parserType {
+	case "pageObject":
+		return "class"
+	case "test":
+		return "class"
+	case "step":
+		return "class"
+	default:
+		return "class"
 	}
-
-	return nil, nil
 }
 
-func (idx *JavaIndexer) isStepAnnotation(name string) bool {
-	stepAnnotations := []string{"Given", "When", "Then", "And", "But"}
+func buildSignature(mth parser.MethodInfo) string {
+	params := make([]string, len(mth.Parameters))
+	for i, p := range mth.Parameters {
+		params[i] = p.Type + " " + p.Name
+	}
+	return fmt.Sprintf("%s(%s)", mth.Name, strings.Join(params, ", "))
+}
+
+func (idx *JavaIndexer) isStepAnnotation(annotation string) bool {
+	stepAnnotations := []string{"@Given", "@When", "@Then", "@And", "@But"}
 	for _, step := range stepAnnotations {
-		if name == step {
+		if strings.HasPrefix(annotation, step) {
 			return true
 		}
 	}
 	return false
 }
 
-func (idx *JavaIndexer) extractStepPattern(ann parser.Annotation) string {
+func (idx *JavaIndexer) extractStepPattern(annotation string) string {
 	// Extract pattern from @Given("I am on login page")
-	if len(ann.Parameters) > 0 {
-		// Remove quotes
-		pattern := strings.Trim(ann.Parameters[0], "\"")
-		return pattern
+	start := strings.Index(annotation, "(\"")
+	if start == -1 {
+		return ""
 	}
-	return ""
+	start += 2
+	end := strings.Index(annotation[start:], "\"")
+	if end == -1 {
+		return ""
+	}
+	return annotation[start : start+end]
 }
 
-func (idx *JavaIndexer) getStepKeyword(annName string) string {
-	keywords := map[string]string{
-		"Given": "Given",
-		"When":  "When",
-		"Then":  "Then",
-		"And":   "And",
-		"But":   "But",
+func (idx *JavaIndexer) getStepKeyword(annotation string) string {
+	if strings.HasPrefix(annotation, "@Given") {
+		return "Given"
+	} else if strings.HasPrefix(annotation, "@When") {
+		return "When"
+	} else if strings.HasPrefix(annotation, "@Then") {
+		return "Then"
+	} else if strings.HasPrefix(annotation, "@And") {
+		return "And"
+	} else if strings.HasPrefix(annotation, "@But") {
+		return "But"
 	}
-	return keywords[annName]
+	return ""
 }
