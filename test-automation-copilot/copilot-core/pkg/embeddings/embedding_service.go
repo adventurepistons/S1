@@ -11,7 +11,7 @@ import (
 // EmbeddingService generates embeddings using OpenAI
 type EmbeddingService struct {
 	client *openai.Client
-	model  string
+	model  openai.EmbeddingModel
 }
 
 // EmbeddingConfig configures the embedding service
@@ -32,8 +32,8 @@ func NewEmbeddingService(config EmbeddingConfig) (*EmbeddingService, error) {
 	}
 
 	// Default to text-embedding-3-small (cheaper and faster)
-	model := config.Model
-	if model == "" {
+	model := openai.EmbeddingModel(config.Model)
+	if config.Model == "" {
 		model = openai.SmallEmbedding3
 	}
 
@@ -54,7 +54,7 @@ func (s *EmbeddingService) Embed(ctx context.Context, text string) ([]float32, e
 	// Create embedding request
 	req := openai.EmbeddingRequest{
 		Input: []string{text},
-		Model: openai.EmbeddingModel(s.model),
+		Model: s.model,
 	}
 
 	// Call OpenAI API
@@ -99,7 +99,7 @@ func (s *EmbeddingService) EmbedBatch(ctx context.Context, texts []string) ([][]
 		// Create embedding request
 		req := openai.EmbeddingRequest{
 			Input: batch,
-			Model: openai.EmbeddingModel(s.model),
+			Model: s.model,
 		}
 
 		// Call OpenAI API
@@ -140,7 +140,7 @@ func (s *EmbeddingService) GetDimensions() int {
 }
 
 // GetModel returns the current embedding model
-func (s *EmbeddingService) GetModel() string {
+func (s *EmbeddingService) GetModel() openai.EmbeddingModel {
 	return s.model
 }
 

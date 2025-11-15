@@ -3,7 +3,6 @@ package embeddings
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	chromem "github.com/philippgille/chromem-go"
 )
@@ -13,6 +12,7 @@ type VectorStore struct {
 	db               *chromem.DB
 	collection       *chromem.Collection
 	embeddingService *EmbeddingService
+	persistPath      string // Store path since DB doesn't export it
 }
 
 // VectorStoreConfig configures the vector store
@@ -76,6 +76,7 @@ func NewVectorStore(config VectorStoreConfig) (*VectorStore, error) {
 		db:               db,
 		collection:       collection,
 		embeddingService: config.EmbeddingService,
+		persistPath:      config.PersistPath,
 	}, nil
 }
 
@@ -139,10 +140,12 @@ func (vs *VectorStore) AddDocuments(ctx context.Context, docs []Document) error 
 		}
 	}
 
-	// Batch add
-	err = vs.collection.AddDocuments(ctx, chromemDocs...)
-	if err != nil {
-		return fmt.Errorf("failed to add documents: %w", err)
+	// Add documents one by one (chromem-go doesn't support batch add)
+	for _, doc := range chromemDocs {
+		err = vs.collection.AddDocument(ctx, doc)
+		if err != nil {
+			return fmt.Errorf("failed to add document %s: %w", doc.ID, err)
+		}
 	}
 
 	return nil
@@ -157,7 +160,7 @@ func (vs *VectorStore) Search(ctx context.Context, query string, topK int) ([]Se
 	}
 
 	// Search collection
-	results, err := vs.collection.Query(ctx, queryEmbedding, topK, nil, nil)
+	results, err := vs.collection.QueryEmbedding(ctx, queryEmbedding, topK, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search: %w", err)
 	}
@@ -191,7 +194,7 @@ func (vs *VectorStore) SearchWithFilter(ctx context.Context, query string, topK 
 	}
 
 	// Search with filter
-	results, err := vs.collection.Query(ctx, queryEmbedding, topK, filter, nil)
+	results, err := vs.collection.QueryEmbedding(ctx, queryEmbedding, topK, filter, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search: %w", err)
 	}
@@ -216,13 +219,17 @@ func (vs *VectorStore) SearchWithFilter(ctx context.Context, query string, topK 
 }
 
 // Delete removes a document by ID
+// Note: chromem-go v0.5.0 doesn't support deleting individual documents.
+// Use Clear() to remove all documents or recreate the collection.
 func (vs *VectorStore) Delete(ctx context.Context, id string) error {
-	return vs.collection.Delete(ctx, nil, id)
+	return fmt.Errorf("delete operation not supported in chromem-go v0.5.0")
 }
 
 // DeleteWhere removes documents matching a filter
+// Note: chromem-go v0.5.0 doesn't support deleting individual documents.
+// Use Clear() to remove all documents or recreate the collection.
 func (vs *VectorStore) DeleteWhere(ctx context.Context, filter map[string]string) error {
-	return vs.collection.Delete(ctx, filter)
+	return fmt.Errorf("delete operation not supported in chromem-go v0.5.0")
 }
 
 // Count returns the number of documents in the collection
@@ -279,6 +286,6 @@ func (vs *VectorStore) GetStats() VectorStoreStats {
 	return VectorStoreStats{
 		DocumentCount:  vs.collection.Count(),
 		CollectionName: vs.collection.Name,
-		PersistPath:    filepath.Dir(vs.db.GetPath()),
+		PersistPath:    vs.persistPath,
 	}
 }
