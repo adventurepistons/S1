@@ -262,7 +262,6 @@ func extractLocatorInfo(fieldNode *sitter.Node, content []byte) (string, string)
 	if strings.Contains(fieldText, "@FindBy") {
 		// Pattern: @FindBy(id = "username")
 		for _, locType := range []string{"id", "name", "css", "xpath", "className", "tagName", "linkText", "partialLinkText"} {
-			pattern := fmt.Sprintf(`%s\s*=\s*"([^"]+)"`, locType)
 			if idx := strings.Index(fieldText, locType+" ="); idx != -1 {
 				start := strings.Index(fieldText[idx:], `"`) + idx + 1
 				end := strings.Index(fieldText[start:], `"`) + start
@@ -276,7 +275,6 @@ func extractLocatorInfo(fieldNode *sitter.Node, content []byte) (string, string)
 	// Check for By.xxx() pattern
 	if strings.Contains(fieldText, "By.") {
 		for _, locType := range []string{"id", "name", "cssSelector", "xpath", "className", "tagName", "linkText", "partialLinkText"} {
-			pattern := fmt.Sprintf(`By\.%s\("([^"]+)"\)`, locType)
 			if strings.Contains(fieldText, "By."+locType) {
 				start := strings.Index(fieldText, "By."+locType+"(\"") + len("By."+locType+"(\"")
 				end := strings.Index(fieldText[start:], `"`) + start
