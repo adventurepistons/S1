@@ -89,7 +89,36 @@ func runCLI() {
 
 	case "analyze":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: copilot-core analyze <workspace-path>")
+			fmt.Println("Usage: copilot-core analyze <workspace-path> [--json]")
+			os.Exit(1)
+		}
+		workspacePath := os.Args[2]
+
+		// Check for JSON flag
+		jsonOutput := false
+		if len(os.Args) > 3 && os.Args[3] == "--json" {
+			jsonOutput = true
+		}
+
+		a := analyzer.NewWorkspaceAnalyzer()
+		result, err := a.Analyze(workspacePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if jsonOutput {
+			// JSON output for programmatic use
+			output, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(output))
+		} else {
+			// Human-readable health report
+			printHealthReport(result)
+		}
+
+	case "health":
+		// Alias for analyze (non-JSON)
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: copilot-core health <workspace-path>")
 			os.Exit(1)
 		}
 		workspacePath := os.Args[2]
@@ -98,8 +127,33 @@ func runCLI() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		output, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(output))
+		printHealthReport(result)
+
+	case "generate":
+		if len(os.Args) < 5 {
+			fmt.Println("Usage: copilot-core generate <type> <workspace> <spec>")
+			fmt.Println("Types: pageObject, test, feature, stepDefinition")
+			os.Exit(1)
+		}
+		genType := os.Args[2]
+		workspacePath := os.Args[3]
+		spec := os.Args[4]
+
+		g := generator.NewCodeGeneratorWithWorkspace(workspacePath)
+		req := generator.GenerateRequest{
+			Type:          genType,
+			Specification: spec,
+			Framework:     "selenium-java",
+		}
+
+		code, err := g.Generate(req)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Printf("\n✅ Generated: %s\n", code.FileName)
+		fmt.Printf("📁 Path: %s\n\n", code.FilePath)
+		fmt.Println(code.Content)
 
 	default:
 		printUsage()
@@ -108,11 +162,215 @@ func runCLI() {
 }
 
 func printUsage() {
-	fmt.Println("Copilot Core - Test Automation AI Engine")
+	fmt.Println("🤖 Copilot Core - Test Automation AI Engine")
 	fmt.Println("\nUsage:")
-	fmt.Println("  copilot-core server              Start HTTP server")
-	fmt.Println("  copilot-core parse <file>        Parse a Java file")
-	fmt.Println("  copilot-core analyze <workspace> Analyze workspace")
+	fmt.Println("  copilot-core server                         Start HTTP server")
+	fmt.Println("  copilot-core parse <file>                   Parse a Java file")
+	fmt.Println("  copilot-core analyze <workspace> [--json]   Analyze workspace (full report)")
+	fmt.Println("  copilot-core health <workspace>             Project health report")
+	fmt.Println("  copilot-core generate <type> <workspace> <spec>")
+	fmt.Println("      Types: pageObject, test, feature, stepDefinition")
+	fmt.Println("\nExamples:")
+	fmt.Println("  copilot-core analyze /path/to/project")
+	fmt.Println("  copilot-core health /path/to/project")
+	fmt.Println("  copilot-core generate pageObject . \"Login Page\"")
+}
+
+func printHealthReport(analysis *analyzer.FrameworkAnalysis) {
+	fmt.Println("\n═══════════════════════════════════════════════════════")
+	fmt.Println("       📊 PROJECT HEALTH REPORT")
+	fmt.Println("═══════════════════════════════════════════════════════\n")
+
+	// 1. Framework Information
+	fmt.Println("🔧 FRAMEWORK")
+	fmt.Printf("   Framework: %s\n", analysis.Framework)
+	fmt.Printf("   Test Runner: %s\n", analysis.TestRunner)
+	if analysis.ParallelMode != "" {
+		fmt.Printf("   Parallel Execution: %s (%d threads)\n", analysis.ParallelMode, analysis.ThreadCount)
+	}
+
+	// 2. Dependencies
+	if len(analysis.Dependencies) > 0 {
+		fmt.Printf("   Dependencies: %d\n", len(analysis.Dependencies))
+		if analysis.PomInfo != nil {
+			// Show key dependencies
+			if seleniumDep := analysis.PomInfo.GetDependencyByArtifact("selenium-java"); seleniumDep != nil {
+				fmt.Printf("     • Selenium: %s\n", seleniumDep.Version)
+			}
+			if testngDep := analysis.PomInfo.GetDependencyByArtifact("testng"); testngDep != nil {
+				fmt.Printf("     • TestNG: %s\n", testngDep.Version)
+			}
+		}
+	}
+
+	// 3. Code Statistics
+	fmt.Println("\n📂 CODE STATISTICS")
+	fmt.Printf("   Page Objects: %d\n", len(analysis.PageObjects))
+	fmt.Printf("   Test Cases: %d\n", len(analysis.TestCases))
+	if len(analysis.StepDefinitions) > 0 {
+		fmt.Printf("   Step Definitions: %d\n", len(analysis.StepDefinitions))
+	}
+	if len(analysis.FeatureFiles) > 0 {
+		fmt.Printf("   Feature Files: %d\n", len(analysis.FeatureFiles))
+	}
+	fmt.Printf("   Utility Classes: %d\n", len(analysis.Utilities))
+
+	// 4. Page Objects Detail
+	if len(analysis.PageObjects) > 0 {
+		fmt.Println("\n📄 PAGE OBJECTS")
+		totalElements := 0
+		for _, po := range analysis.PageObjects {
+			totalElements += len(po.Elements)
+			fmt.Printf("   • %s (%d elements, %d methods)\n",
+				po.ClassName, len(po.Elements), len(po.Methods))
+		}
+		fmt.Printf("   Total Elements: %d\n", totalElements)
+	}
+
+	// 5. Test Cases Detail
+	if len(analysis.TestCases) > 0 {
+		fmt.Println("\n✅ TEST CASES")
+		totalTests := 0
+		for _, tc := range analysis.TestCases {
+			totalTests += len(tc.TestMethods)
+			if len(tc.TestMethods) > 0 {
+				fmt.Printf("   • %s (%d tests)\n", tc.ClassName, len(tc.TestMethods))
+			}
+		}
+		fmt.Printf("   Total Test Methods: %d\n", totalTests)
+	}
+
+	// 6. BDD/Cucumber Info
+	if len(analysis.FeatureFiles) > 0 {
+		fmt.Println("\n🥒 BDD/CUCUMBER")
+		totalScenarios := 0
+		for _, feature := range analysis.FeatureFiles {
+			totalScenarios += len(feature.Scenarios)
+			fmt.Printf("   • %s (%d scenarios)\n",
+				feature.Feature.Name, len(feature.Scenarios))
+		}
+		fmt.Printf("   Total Scenarios: %d\n", totalScenarios)
+
+		// Step matching
+		if len(analysis.StepMatches) > 0 {
+			fmt.Printf("   Matched Steps: %d\n", len(analysis.StepMatches))
+		}
+	}
+
+	// 7. Project Structure
+	fmt.Println("\n📁 PROJECT STRUCTURE")
+	if analysis.Structure.PagesDir != "" {
+		fmt.Printf("   Pages: %s\n", analysis.Structure.PagesDir)
+	}
+	if analysis.Structure.TestsDir != "" {
+		fmt.Printf("   Tests: %s\n", analysis.Structure.TestsDir)
+	}
+	if analysis.Structure.StepsDir != "" {
+		fmt.Printf("   Steps: %s\n", analysis.Structure.StepsDir)
+	}
+	if analysis.Structure.ResourcesDir != "" {
+		fmt.Printf("   Resources: %s\n", analysis.Structure.ResourcesDir)
+	}
+
+	// 8. Health Score
+	score := calculateHealthScore(analysis)
+	fmt.Println("\n💯 HEALTH SCORE")
+	fmt.Printf("   Overall: %d/100 %s\n", score, getScoreEmoji(score))
+
+	// 9. Recommendations
+	recommendations := generateRecommendations(analysis)
+	if len(recommendations) > 0 {
+		fmt.Println("\n💡 RECOMMENDATIONS")
+		for _, rec := range recommendations {
+			fmt.Printf("   %s\n", rec)
+		}
+	}
+
+	fmt.Println("\n═══════════════════════════════════════════════════════\n")
+}
+
+func calculateHealthScore(analysis *analyzer.FrameworkAnalysis) int {
+	score := 50 // Base score
+
+	// Has page objects (+10)
+	if len(analysis.PageObjects) > 0 {
+		score += 10
+	}
+
+	// Has tests (+10)
+	if len(analysis.TestCases) > 0 {
+		score += 10
+	}
+
+	// Has pom.xml (+10)
+	if analysis.PomInfo != nil {
+		score += 10
+	}
+
+	// Has testng.xml (+5)
+	if analysis.TestNGSuite != nil {
+		score += 5
+	}
+
+	// Has feature files (+5)
+	if len(analysis.FeatureFiles) > 0 {
+		score += 5
+	}
+
+	// Has step definitions (+5)
+	if len(analysis.StepDefinitions) > 0 {
+		score += 5
+	}
+
+	// Parallel execution configured (+5)
+	if analysis.ParallelMode != "" {
+		score += 5
+	}
+
+	return score
+}
+
+func getScoreEmoji(score int) string {
+	if score >= 90 {
+		return "🌟 Excellent"
+	} else if score >= 75 {
+		return "✅ Good"
+	} else if score >= 60 {
+		return "⚠️  Fair"
+	} else {
+		return "❌ Needs Work"
+	}
+}
+
+func generateRecommendations(analysis *analyzer.FrameworkAnalysis) []string {
+	var recommendations []string
+
+	if len(analysis.PageObjects) == 0 {
+		recommendations = append(recommendations, "• Add Page Object Model pattern for better maintainability")
+	}
+
+	if len(analysis.TestCases) == 0 {
+		recommendations = append(recommendations, "• Create test cases for your page objects")
+	}
+
+	if analysis.PomInfo == nil {
+		recommendations = append(recommendations, "• Add pom.xml for dependency management")
+	}
+
+	if analysis.ParallelMode == "" && len(analysis.TestCases) > 5 {
+		recommendations = append(recommendations, "• Enable parallel execution in testng.xml for faster test runs")
+	}
+
+	if len(analysis.FeatureFiles) > 0 && len(analysis.StepDefinitions) == 0 {
+		recommendations = append(recommendations, "• Add step definitions for your feature files")
+	}
+
+	if len(analysis.StepMatches) > 0 {
+		// Check for unmatched steps
+		recommendations = append(recommendations, "• Review step-to-definition matching")
+	}
+
+	return recommendations
 }
 
 // ===== HTTP Handlers =====

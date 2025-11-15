@@ -12,16 +12,19 @@ import (
 type CodeGenerator struct {
 	llmClient     *llm.Client
 	promptBuilder *prompts.PromptBuilder
+	projectRules  *prompts.ProjectRules
+	workspacePath string
 }
 
 type GenerateRequest struct {
-	Type          string                   `json:"type"` // "pageObject", "test", "utility"
+	Type          string                   `json:"type"` // "pageObject", "test", "utility", "feature", "stepDefinition"
 	Specification string                   `json:"specification"`
 	Elements      []ElementData            `json:"elements,omitempty"`
 	PageData      *RecordedPageData        `json:"pageData,omitempty"`
 	Context       map[string]interface{}   `json:"context,omitempty"`
 	Framework     string                   `json:"framework"` // "selenium-java", etc.
 	ExistingCode  []map[string]interface{} `json:"existingCode,omitempty"`
+	Interactions  []InteractionData        `json:"interactions,omitempty"` // For BDD generation
 }
 
 type ElementData struct {
@@ -58,9 +61,22 @@ type GeneratedCode struct {
 }
 
 func NewCodeGenerator() *CodeGenerator {
+	return NewCodeGeneratorWithWorkspace("")
+}
+
+func NewCodeGeneratorWithWorkspace(workspacePath string) *CodeGenerator {
+	// Load project rules from .testcopilot file
+	rules, err := prompts.LoadProjectRules(workspacePath)
+	if err != nil {
+		// Use default rules if config not found
+		rules = prompts.GetDefaultRules()
+	}
+
 	return &CodeGenerator{
 		llmClient:     llm.NewClient(),
 		promptBuilder: prompts.NewPromptBuilder(),
+		projectRules:  rules,
+		workspacePath: workspacePath,
 	}
 }
 
@@ -72,6 +88,10 @@ func (g *CodeGenerator) Generate(req GenerateRequest) (*GeneratedCode, error) {
 		return g.generateTestCase(req)
 	case "utility":
 		return g.generateUtility(req)
+	case "feature":
+		return g.generateFeatureFile(req)
+	case "stepDefinition":
+		return g.generateStepDefinitions(req)
 	default:
 		return nil, fmt.Errorf("unknown generation type: %s", req.Type)
 	}
@@ -88,8 +108,13 @@ func (g *CodeGenerator) generatePageObject(req GenerateRequest) (*GeneratedCode,
 		})
 	}
 
-	// Set framework context
-	g.promptBuilder.SetFramework(req.Framework, "testng")
+	// Set framework context - use detected test runner from project rules
+	testRunner := "testng"
+	if g.projectRules != nil && g.projectRules.CustomInstructions != "" {
+		// Could parse test runner from custom instructions, but for now use default
+		testRunner = "testng"
+	}
+	g.promptBuilder.SetFramework(req.Framework, testRunner)
 
 	// Add existing code for style matching
 	if len(req.ExistingCode) > 0 {
@@ -106,7 +131,10 @@ func (g *CodeGenerator) generatePageObject(req GenerateRequest) (*GeneratedCode,
 		spec = req.Specification
 	}
 
-	prompt := g.promptBuilder.BuildPageObjectPrompt(spec, elementsForPrompt)
+	basePrompt := g.promptBuilder.BuildPageObjectPrompt(spec, elementsForPrompt)
+
+	// Apply project-specific rules from .testcopilot config
+	prompt := g.promptBuilder.ApplyProjectRules(basePrompt, g.projectRules)
 
 	// Call LLM
 	response, err := g.llmClient.Generate(prompt, map[string]interface{}{
@@ -146,8 +174,12 @@ func (g *CodeGenerator) generateTestCase(req GenerateRequest) (*GeneratedCode, e
 		}
 	}
 
-	// Set framework
-	g.promptBuilder.SetFramework(req.Framework, "testng")
+	// Set framework - use detected test runner
+	testRunner := "testng"
+	if g.projectRules != nil {
+		testRunner = "testng" // TODO: get from analysis
+	}
+	g.promptBuilder.SetFramework(req.Framework, testRunner)
 
 	// Add existing code
 	if len(req.ExistingCode) > 0 {
@@ -157,7 +189,10 @@ func (g *CodeGenerator) generateTestCase(req GenerateRequest) (*GeneratedCode, e
 	}
 
 	// Build prompt
-	prompt := g.promptBuilder.BuildTestCasePrompt(req.Specification, pageObjects)
+	basePrompt := g.promptBuilder.BuildTestCasePrompt(req.Specification, pageObjects)
+
+	// Apply project-specific rules
+	prompt := g.promptBuilder.ApplyProjectRules(basePrompt, g.projectRules)
 
 	// Call LLM
 	response, err := g.llmClient.Generate(prompt, map[string]interface{}{
@@ -192,6 +227,19 @@ func (g *CodeGenerator) generateUtility(req GenerateRequest) (*GeneratedCode, er
 }
 
 func (g *CodeGenerator) GenerateFromRecordedSession(sessionData map[string]interface{}) ([]*GeneratedCode, error) {
+	return g.GenerateFromRecordedSessionWithOptions(sessionData, map[string]bool{
+		"pageObjects":     true,
+		"tests":           false,
+		"features":        false,
+		"stepDefinitions": false,
+	})
+}
+
+// GenerateFromRecordedSessionWithOptions generates multiple file types from a session (Composer-style)
+func (g *CodeGenerator) GenerateFromRecordedSessionWithOptions(
+	sessionData map[string]interface{},
+	options map[string]bool,
+) ([]*GeneratedCode, error) {
 	var generatedFiles []*GeneratedCode
 
 	// Extract pages from session
@@ -205,32 +253,121 @@ func (g *CodeGenerator) GenerateFromRecordedSession(sessionData map[string]inter
 		framework = fw
 	}
 
-	// Generate page object for each page
-	for _, pageInterface := range pages {
-		pageMap, ok := pageInterface.(map[string]interface{})
-		if !ok {
-			continue
+	var pageObjects []*GeneratedCode
+	var allInteractions []InteractionData
+
+	// 1. Generate page objects for each page
+	if options["pageObjects"] {
+		fmt.Println("📄 Generating Page Objects...")
+		for _, pageInterface := range pages {
+			pageMap, ok := pageInterface.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			// Convert to RecordedPageData
+			pageData := g.convertToPageData(pageMap)
+
+			// Generate page object
+			req := GenerateRequest{
+				Type:      "pageObject",
+				PageData:  pageData,
+				Framework: framework,
+			}
+
+			generated, err := g.generatePageObject(req)
+			if err != nil {
+				fmt.Printf("  ⚠️  Failed to generate page object for %s: %v\n", pageData.Title, err)
+				continue
+			}
+
+			fmt.Printf("  ✓ Generated %s\n", generated.FileName)
+			pageObjects = append(pageObjects, generated)
+			generatedFiles = append(generatedFiles, generated)
+
+			// Collect interactions
+			allInteractions = append(allInteractions, pageData.Interactions...)
 		}
-
-		// Convert to RecordedPageData
-		pageData := g.convertToPageData(pageMap)
-
-		// Generate page object
-		req := GenerateRequest{
-			Type:      "pageObject",
-			PageData:  pageData,
-			Framework: framework,
-		}
-
-		generated, err := g.generatePageObject(req)
-		if err != nil {
-			fmt.Printf("Failed to generate page object for %s: %v\n", pageData.Title, err)
-			continue
-		}
-
-		generatedFiles = append(generatedFiles, generated)
 	}
 
+	// 2. Generate test cases (uses generated page objects)
+	if options["tests"] && len(pageObjects) > 0 {
+		fmt.Println("\n📝 Generating Test Cases...")
+		// Build context with page objects
+		var pageObjectsContext []map[string]interface{}
+		for _, po := range pageObjects {
+			pageObjectsContext = append(pageObjectsContext, map[string]interface{}{
+				"className": strings.TrimSuffix(po.FileName, ".java"),
+				"methods": []map[string]interface{}{
+					{"name": "performAction"},
+				},
+			})
+		}
+
+		// Generate one test that uses all page objects
+		testReq := GenerateRequest{
+			Type:          "test",
+			Specification: "Test user flow through recorded session",
+			Framework:     framework,
+			Context: map[string]interface{}{
+				"pageObjects": pageObjectsContext,
+			},
+		}
+
+		testCode, err := g.generateTestCase(testReq)
+		if err == nil {
+			fmt.Printf("  ✓ Generated %s\n", testCode.FileName)
+			generatedFiles = append(generatedFiles, testCode)
+		} else {
+			fmt.Printf("  ⚠️  Failed to generate test: %v\n", err)
+		}
+	}
+
+	// 3. Generate feature files (Gherkin/BDD)
+	if options["features"] && len(allInteractions) > 0 {
+		fmt.Println("\n🥒 Generating Feature Files...")
+		featureReq := GenerateRequest{
+			Type:          "feature",
+			Specification: "User interaction flow",
+			Interactions:  allInteractions,
+			Framework:     framework,
+		}
+
+		featureCode, err := g.generateFeatureFile(featureReq)
+		if err == nil {
+			fmt.Printf("  ✓ Generated %s\n", featureCode.FileName)
+			generatedFiles = append(generatedFiles, featureCode)
+		} else {
+			fmt.Printf("  ⚠️  Failed to generate feature: %v\n", err)
+		}
+	}
+
+	// 4. Generate step definitions (Cucumber)
+	if options["stepDefinitions"] && len(allInteractions) > 0 {
+		fmt.Println("\n🎯 Generating Step Definitions...")
+		// Use first page data for step definitions
+		if len(pages) > 0 {
+			pageMap := pages[0].(map[string]interface{})
+			pageData := g.convertToPageData(pageMap)
+
+			stepReq := GenerateRequest{
+				Type:          "stepDefinition",
+				Specification: pageData.Title,
+				PageData:      pageData,
+				Framework:     framework,
+			}
+
+			stepCode, err := g.generateStepDefinitions(stepReq)
+			if err == nil {
+				fmt.Printf("  ✓ Generated %s\n", stepCode.FileName)
+				generatedFiles = append(generatedFiles, stepCode)
+			} else {
+				fmt.Printf("  ⚠️  Failed to generate step definitions: %v\n", err)
+			}
+		}
+	}
+
+	fmt.Printf("\n🎉 Generated %d files total\n", len(generatedFiles))
 	return generatedFiles, nil
 }
 
@@ -349,6 +486,10 @@ func (g *CodeGenerator) inferFilePath(req GenerateRequest, fileName string) stri
 		return "src/test/java/tests/" + fileName
 	case "utility":
 		return "src/test/java/utils/" + fileName
+	case "stepDefinition":
+		return "src/test/java/steps/" + fileName
+	case "feature":
+		return "src/test/resources/features/" + fileName
 	default:
 		return "src/test/java/" + fileName
 	}
@@ -458,4 +599,195 @@ func (g *CodeGenerator) toCamelCase(str string) string {
 	}
 
 	return result
+}
+
+// ============= BDD/Cucumber Generation =============
+
+// generateFeatureFile generates a Gherkin feature file from recorded interactions
+func (g *CodeGenerator) generateFeatureFile(req GenerateRequest) (*GeneratedCode, error) {
+	if req.PageData == nil && len(req.Interactions) == 0 {
+		return nil, fmt.Errorf("no interaction data provided for feature generation")
+	}
+
+	interactions := req.Interactions
+	if req.PageData != nil {
+		interactions = req.PageData.Interactions
+	}
+
+	// Build feature content from interactions
+	featureName := req.Specification
+	if featureName == "" && req.PageData != nil {
+		featureName = req.PageData.Title
+	}
+
+	var content strings.Builder
+
+	content.WriteString(fmt.Sprintf("Feature: %s\n", featureName))
+	content.WriteString("  As a user\n")
+	content.WriteString("  I want to interact with the application\n")
+	content.WriteString("  So that I can complete my tasks\n\n")
+
+	// Build scenario from interactions
+	content.WriteString("  Scenario: User interaction flow\n")
+
+	// Convert interactions to Gherkin steps
+	stepNumber := 1
+	for _, interaction := range interactions {
+		step := g.convertInteractionToGherkinStep(interaction, stepNumber)
+		if step != "" {
+			keyword := "Given"
+			if stepNumber > 1 {
+				keyword = "And"
+			}
+			if interaction.Type == "click" && stepNumber > 1 {
+				keyword = "When"
+			}
+			content.WriteString(fmt.Sprintf("    %s %s\n", keyword, step))
+			stepNumber++
+		}
+	}
+
+	// Add Then step for validation
+	content.WriteString("    Then I should see the expected page\n")
+
+	fileName := g.toSnakeCase(featureName) + ".feature"
+	filePath := "src/test/resources/features/" + fileName
+
+	return &GeneratedCode{
+		FileName: fileName,
+		FilePath: filePath,
+		Content:  content.String(),
+		Language: "gherkin",
+		Type:     "feature",
+	}, nil
+}
+
+// generateStepDefinitions generates Cucumber step definition class from feature
+func (g *CodeGenerator) generateStepDefinitions(req GenerateRequest) (*GeneratedCode, error) {
+	// Build step definition class
+	className := "StepDefinitions"
+	if req.Specification != "" {
+		className = g.inferClassName(req.Specification, "") + "Steps"
+		className = strings.TrimSuffix(className, "Page") + "Steps"
+	}
+
+	var content strings.Builder
+	content.WriteString("package steps;\n\n")
+	content.WriteString("import io.cucumber.java.en.*;\n")
+	content.WriteString("import org.openqa.selenium.WebDriver;\n")
+	content.WriteString("import pages.*;\n")
+	content.WriteString("import static org.testng.Assert.*;\n\n")
+
+	content.WriteString(fmt.Sprintf("public class %s {\n", className))
+	content.WriteString("    private WebDriver driver;\n")
+
+	// Add page object fields
+	if req.PageData != nil {
+		pageClassName := req.PageData.ClassName
+		content.WriteString(fmt.Sprintf("    private %s %sPage;\n\n",
+			pageClassName, strings.ToLower(pageClassName[:1])+pageClassName[1:]))
+	}
+
+	// Generate step methods from interactions
+	if req.PageData != nil {
+		for i, interaction := range req.PageData.Interactions {
+			stepMethod := g.generateStepMethod(interaction, i)
+			if stepMethod != "" {
+				content.WriteString(stepMethod)
+				content.WriteString("\n")
+			}
+		}
+	}
+
+	content.WriteString("}\n")
+
+	fileName := className + ".java"
+	filePath := "src/test/java/steps/" + fileName
+
+	return &GeneratedCode{
+		FileName: fileName,
+		FilePath: filePath,
+		Content:  content.String(),
+		Language: "java",
+		Type:     "stepDefinition",
+	}, nil
+}
+
+// convertInteractionToGherkinStep converts an interaction to a Gherkin step
+func (g *CodeGenerator) convertInteractionToGherkinStep(interaction InteractionData, stepNum int) string {
+	switch interaction.Type {
+	case "click":
+		elementName := interaction.Element
+		if elementName == "" {
+			elementName = "the button"
+		}
+		return fmt.Sprintf("I click on %s", elementName)
+
+	case "input", "type":
+		elementName := interaction.Element
+		value := interaction.Value
+		if elementName == "" {
+			elementName = "the field"
+		}
+		if value != "" {
+			return fmt.Sprintf("I enter \"%s\" in %s", value, elementName)
+		}
+		return fmt.Sprintf("I enter text in %s", elementName)
+
+	case "navigate":
+		if interaction.Value != "" {
+			return fmt.Sprintf("I navigate to \"%s\"", interaction.Value)
+		}
+		return "I navigate to the page"
+
+	case "select":
+		return fmt.Sprintf("I select an option from %s", interaction.Element)
+
+	default:
+		return ""
+	}
+}
+
+// generateStepMethod generates a step definition method
+func (g *CodeGenerator) generateStepMethod(interaction InteractionData, index int) string {
+	var method strings.Builder
+
+	switch interaction.Type {
+	case "click":
+		method.WriteString("    @When(\"I click on {string}\")\n")
+		method.WriteString("    public void iClickOn(String element) {\n")
+		method.WriteString("        // TODO: Implement click action\n")
+		method.WriteString("    }\n")
+
+	case "input", "type":
+		method.WriteString("    @When(\"I enter {string} in {string}\")\n")
+		method.WriteString("    public void iEnterTextIn(String text, String element) {\n")
+		method.WriteString("        // TODO: Implement input action\n")
+		method.WriteString("    }\n")
+
+	case "navigate":
+		method.WriteString("    @Given(\"I navigate to {string}\")\n")
+		method.WriteString("    public void iNavigateTo(String url) {\n")
+		method.WriteString("        driver.get(url);\n")
+		method.WriteString("    }\n")
+	}
+
+	return method.String()
+}
+
+// toSnakeCase converts string to snake_case for file names
+func (g *CodeGenerator) toSnakeCase(str string) string {
+	// Remove special characters and convert to snake_case
+	words := strings.FieldsFunc(str, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+	})
+
+	var result []string
+	for _, word := range words {
+		if len(word) > 0 {
+			result = append(result, strings.ToLower(word))
+		}
+	}
+
+	return strings.Join(result, "_")
 }

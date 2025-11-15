@@ -10,18 +10,27 @@ import (
 )
 
 type WorkspaceAnalyzer struct {
-	parser *parser.JavaParser
+	javaParser    *parser.JavaParser
+	gherkinParser *parser.GherkinParser
+	pomParser     *parser.PomParser
+	testngParser  *parser.TestNGParser
 }
 
 type FrameworkAnalysis struct {
-	Framework      string                `json:"framework"`
-	TestRunner     string                `json:"testRunner"`
-	PageObjects    []PageObjectInfo      `json:"pageObjects"`
-	TestCases      []TestCaseInfo        `json:"testCases"`
-	StepDefinitions []StepDefinitionInfo `json:"stepDefinitions"`
-	Utilities      []UtilityInfo         `json:"utilities"`
-	Dependencies   []string              `json:"dependencies"`
-	Structure      ProjectStructure      `json:"structure"`
+	Framework        string                     `json:"framework"`
+	TestRunner       string                     `json:"testRunner"`
+	PageObjects      []PageObjectInfo           `json:"pageObjects"`
+	TestCases        []TestCaseInfo             `json:"testCases"`
+	StepDefinitions  []StepDefinitionInfo       `json:"stepDefinitions"`
+	Utilities        []UtilityInfo              `json:"utilities"`
+	Dependencies     []string                   `json:"dependencies"`
+	Structure        ProjectStructure           `json:"structure"`
+	FeatureFiles     []*parser.FeatureFile      `json:"featureFiles,omitempty"`
+	PomInfo          *parser.PomFile            `json:"pomInfo,omitempty"`
+	TestNGSuite      *parser.TestNGSuite        `json:"testngSuite,omitempty"`
+	StepMatches      map[string][]string        `json:"stepMatches,omitempty"`
+	ParallelMode     string                     `json:"parallelMode,omitempty"`
+	ThreadCount      int                        `json:"threadCount,omitempty"`
 }
 
 type PageObjectInfo struct {
@@ -85,7 +94,10 @@ type ProjectStructure struct {
 
 func NewWorkspaceAnalyzer() *WorkspaceAnalyzer {
 	return &WorkspaceAnalyzer{
-		parser: parser.NewJavaParser(),
+		javaParser:    parser.NewJavaParser(),
+		gherkinParser: parser.NewGherkinParser(),
+		pomParser:     parser.NewPomParser(),
+		testngParser:  parser.NewTestNGParser(),
 	}
 }
 
@@ -100,6 +112,8 @@ func (a *WorkspaceAnalyzer) Analyze(workspacePath string) (*FrameworkAnalysis, e
 		StepDefinitions: []StepDefinitionInfo{},
 		Utilities:       []UtilityInfo{},
 		Dependencies:    []string{},
+		FeatureFiles:    []*parser.FeatureFile{},
+		StepMatches:     make(map[string][]string),
 		Structure: ProjectStructure{
 			RootPath: workspacePath,
 		},
@@ -108,25 +122,57 @@ func (a *WorkspaceAnalyzer) Analyze(workspacePath string) (*FrameworkAnalysis, e
 	// Detect project structure
 	analysis.Structure = a.detectProjectStructure(workspacePath)
 
-	// Parse dependencies
-	analysis.Dependencies = a.parseDependencies(workspacePath)
+	// 1. Parse pom.xml for accurate framework/dependency detection
+	pomPath := filepath.Join(workspacePath, "pom.xml")
+	if pom, err := a.pomParser.ParseFile(pomPath); err == nil {
+		analysis.PomInfo = pom
+		analysis.Framework = pom.GetFramework()
+		analysis.TestRunner = pom.GetTestRunner()
+		analysis.Dependencies = pom.ListAllDependencies()
+		fmt.Printf("✓ Parsed pom.xml: Framework=%s, TestRunner=%s, %d dependencies\n",
+			analysis.Framework, analysis.TestRunner, len(analysis.Dependencies))
+	} else {
+		// Fallback to old string-based detection
+		analysis.Dependencies = a.parseDependencies(workspacePath)
+		analysis.Framework = a.detectFramework(analysis.Dependencies, workspacePath)
+		analysis.TestRunner = a.detectTestRunner(analysis.Dependencies, workspacePath)
+	}
 
-	// Detect framework and test runner
-	analysis.Framework = a.detectFramework(analysis.Dependencies, workspacePath)
-	analysis.TestRunner = a.detectTestRunner(analysis.Dependencies, workspacePath)
+	// 2. Parse testng.xml for test configuration
+	testngPath := filepath.Join(workspacePath, "testng.xml")
+	if suite, err := a.testngParser.ParseFile(testngPath); err == nil {
+		analysis.TestNGSuite = suite
+		if suite.IsParallelExecution() {
+			analysis.ParallelMode = suite.Parallel
+			analysis.ThreadCount = suite.GetThreadCount()
+			fmt.Printf("✓ Parsed testng.xml: Parallel=%s, Threads=%d\n",
+				analysis.ParallelMode, analysis.ThreadCount)
+		}
+	}
 
-	// Parse all Java files
+	// 3. Parse feature files (Gherkin/Cucumber)
+	if analysis.Structure.ResourcesDir != "" {
+		featuresPath := filepath.Join(analysis.Structure.ResourcesDir, "features")
+		if features, err := a.gherkinParser.ParseDirectory(featuresPath); err == nil && len(features) > 0 {
+			analysis.FeatureFiles = features
+			fmt.Printf("✓ Parsed %d feature files\n", len(features))
+		}
+	}
+
+	// 4. Parse all Java files
 	srcPath := a.findSrcDirectory(workspacePath)
 	if srcPath == "" {
 		return analysis, nil
 	}
 
-	parsedClasses, err := a.parser.ParseDirectory(srcPath)
+	parsedClasses, err := a.javaParser.ParseDirectory(srcPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse directory: %w", err)
 	}
 
-	// Categorize classes
+	fmt.Printf("✓ Parsed %d Java files\n", len(parsedClasses))
+
+	// 5. Categorize classes
 	for _, parsedClass := range parsedClasses {
 		switch parsedClass.Type {
 		case "pageObject":
@@ -139,6 +185,18 @@ func (a *WorkspaceAnalyzer) Analyze(workspacePath string) (*FrameworkAnalysis, e
 			analysis.Utilities = append(analysis.Utilities, a.convertToUtilityInfo(parsedClass))
 		}
 	}
+
+	// 6. Match Gherkin steps to step definitions
+	if len(analysis.FeatureFiles) > 0 && len(analysis.StepDefinitions) > 0 {
+		analysis.StepMatches = a.matchStepsToDefinitions(analysis.FeatureFiles, analysis.StepDefinitions)
+		fmt.Printf("✓ Matched %d steps to definitions\n", len(analysis.StepMatches))
+	}
+
+	fmt.Printf("\n📊 Analysis Complete:\n")
+	fmt.Printf("   Page Objects: %d\n", len(analysis.PageObjects))
+	fmt.Printf("   Test Cases: %d\n", len(analysis.TestCases))
+	fmt.Printf("   Step Definitions: %d\n", len(analysis.StepDefinitions))
+	fmt.Printf("   Feature Files: %d\n", len(analysis.FeatureFiles))
 
 	return analysis, nil
 }
@@ -388,4 +446,34 @@ func (a *WorkspaceAnalyzer) inferMethodDescription(methodName string) string {
 	}
 
 	return result
+}
+
+// matchStepsToDefinitions matches Gherkin steps to Java step definitions
+func (a *WorkspaceAnalyzer) matchStepsToDefinitions(
+	features []*parser.FeatureFile,
+	stepDefs []StepDefinitionInfo,
+) map[string][]string {
+	matches := make(map[string][]string)
+
+	// Build list of step definitions for matching
+	var javastepDefs []parser.StepDefinition
+	for _, stepDefInfo := range stepDefs {
+		for _, step := range stepDefInfo.Steps {
+			javastepDefs = append(javastepDefs, parser.StepDefinition{
+				MethodName: step.Method,
+				Pattern:    step.Pattern,
+				Type:       step.Type,
+			})
+		}
+	}
+
+	// Match each feature file
+	for _, feature := range features {
+		featureMatches := a.gherkinParser.MatchStepsToDefinitions(feature, javastepDefs)
+		for stepKey, methods := range featureMatches {
+			matches[stepKey] = methods
+		}
+	}
+
+	return matches
 }
