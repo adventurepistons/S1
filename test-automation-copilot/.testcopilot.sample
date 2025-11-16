@@ -1,0 +1,33 @@
+{
+  "naming_conventions": {
+    "pageObject": "PascalCase ending with 'Page' (e.g., LoginPage, CheckoutPage)",
+    "testClass": "PascalCase ending with 'Test' (e.g., LoginTest, CheckoutTest)",
+    "testMethod": "camelCase starting with 'test' (e.g., testLoginWithValidCredentials)",
+    "element": "camelCase descriptive (e.g., usernameField, submitButton, errorMessage)"
+  },
+  "import_preferences": [
+    "org.openqa.selenium.WebDriver",
+    "org.openqa.selenium.WebElement",
+    "org.openqa.selenium.support.FindBy",
+    "org.openqa.selenium.support.PageFactory",
+    "org.openqa.selenium.support.ui.WebDriverWait",
+    "org.openqa.selenium.support.ui.ExpectedConditions",
+    "org.testng.Assert",
+    "java.time.Duration"
+  ],
+  "wait_strategy": "Always use explicit waits with WebDriverWait (timeout: 10 seconds). Never use Thread.sleep(). Example: wait.until(ExpectedConditions.visibilityOf(element))",
+  "locator_priority": [
+    "id",
+    "data-testid",
+    "name",
+    "css",
+    "xpath"
+  ],
+  "package_structure": {
+    "pages": "src/test/java/pages",
+    "tests": "src/test/java/tests",
+    "utils": "src/test/java/utils",
+    "steps": "src/test/java/steps"
+  },
+  "custom_instructions": "Always include JavaDoc comments for page objects and test classes. Use fluent interface pattern where appropriate - page object methods should return 'this' or the next page object for method chaining. All test methods must include clear assertion messages for better debugging. Prefer composition over inheritance for page objects."
+}

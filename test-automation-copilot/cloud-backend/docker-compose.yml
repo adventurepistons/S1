@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:14-alpine
+    container_name: testcopilot-db
+    environment:
+      POSTGRES_DB: testcopilot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Cloud backend
+  backend:
+    build: .
+    container_name: testcopilot-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Server
+      PORT: 3000
+      NODE_ENV: development
+
+      # Database
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: testcopilot
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL: false
+
+      # OpenAI (add your key)
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: gpt-4-turbo-preview
+
+      # JWT
+      JWT_SECRET: dev-secret-key-change-in-production
+
+      # Rate limiting
+      RATE_LIMIT_WINDOW: 60000
+      RATE_LIMIT_MAX: 20
+
+      # CORS
+      CORS_ORIGIN: "*"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
