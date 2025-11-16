@@ -6,36 +6,64 @@
 
 An AI coding assistant specifically designed for QA automation engineers. Think Cursor/GitHub Copilot, but it deeply understands test automation frameworks, Page Object Model, and testing best practices.
 
-## 🏗️ Architecture (IP Protected)
+## 🏗️ Cloud-AI Architecture (IP Protected)
 
 ```
 ┌─────────────────────────────────────┐
-│   VS Code Extension (TypeScript)    │  ← Public (UI/UX only)
+│   VS Code Extension (TypeScript)    │  ← Public (UI/UX)
 │   - Chat interface                  │
 │   - File browser integration        │
 │   - Settings management             │
 │   - Element recorder integration    │
 └──────────────┬──────────────────────┘
-               │ HTTP/Subprocess
-               │ (JSON API)
+               │ HTTP/WebSocket
 ┌──────────────▼──────────────────────┐
-│   Go Binary (Compiled - Protected)  │  ← 🔒 YOUR IP
-│   ✅ Java AST Parser                │
-│   ✅ Prompt Engineering             │
-│   - LLM Integration                 │
-│   - Context Building                │
-│   - Code Generation                 │
-│   - Semantic Search                 │
-│   - Local SQLite Storage            │
+│   Local Go Backend (Port 8080)      │  ← Local Preprocessing
+│   ✅ SQLite Database                │
+│   ✅ Vector DB (chromem-go)         │
+│   ✅ Semantic Search                │
+│   ✅ Context Extraction             │
+│   ✅ Workspace Indexing             │
+└──────────────┬──────────────────────┘
+               │ HTTPS (ContextPayload)
+┌──────────────▼──────────────────────┐
+│   Your Cloud Backend                │  ← 🔒 YOUR IP (Secret)
+│   🔒 Prompt Engineering             │
+│   🔒 Few-shot Examples              │
+│   🔒 LLM Orchestration              │
+│   🔒 Context Assembly               │
+└──────────────┬──────────────────────┘
+               │ OpenAI API
+┌──────────────▼──────────────────────┐
+│   OpenAI GPT-4                      │
 └─────────────────────────────────────┘
 ```
 
-### Why Go Binary?
+### Why Cloud-AI Architecture?
 
-1. **IP Protection**: Compiled binary = harder to reverse engineer your prompts & algorithms
-2. **Performance**: Fast AST parsing and processing
-3. **Single Executable**: Easy distribution
-4. **No Dependencies**: Users don't need Python/Node runtime for core logic
+**Similar to Cursor IDE and GitHub Copilot**
+
+1. **IP Protection**: Prompts stay on YOUR cloud backend - users can't inspect them
+2. **Easy Updates**: Change prompts without client updates
+3. **A/B Testing**: Test different prompt strategies in real-time
+4. **Cost Optimization**: Local preprocessing reduces cloud costs
+5. **Usage Tracking**: Monitor usage, billing, analytics
+
+**See**: [CLOUD_ARCHITECTURE.md](CLOUD_ARCHITECTURE.md) for complete details
+
+**Local Backend** (This Repository):
+- ✅ Database indexing (SQLite)
+- ✅ Vector search (chromem-go)
+- ✅ Context extraction (preprocessor)
+- ✅ Fast semantic search
+
+**Cloud Backend** (Separate Implementation):
+- 🔒 Prompt templates (your IP)
+- 🔒 Few-shot examples
+- 🔒 GPT-4 integration
+- 🔒 Streaming logic
+
+**API Spec**: [CLOUD_BACKEND_SPEC.md](CLOUD_BACKEND_SPEC.md)
 
 ## 📁 Project Structure
 
@@ -76,25 +104,39 @@ test-automation-copilot/
 └── README.md
 ```
 
-## ✅ What's Built (So Far)
+## ✅ What's Built
 
-### 1. Go Core Binary
-- ✅ **Java AST Parser** - Parses Java files, extracts classes, methods, fields, locators
-- ✅ **Prompt Engineering Module** - Template system for generating high-quality prompts
-- ✅ **HTTP Server** - REST API for extension to communicate with core
-- ✅ **CLI Mode** - Can run standalone for testing
+### 1. Local Go Backend (Completed) ✅
+- ✅ **Database Layer** - SQLite for code structure (files, classes, methods)
+- ✅ **Vector Database** - chromem-go for semantic embeddings
+- ✅ **Parsers** - Java, Gherkin (.feature), XML (pom.xml) via tree-sitter
+- ✅ **Semantic Search** - Find similar page objects, tests, code snippets
+- ✅ **Context Extraction** - Preprocess user requests with relevant context
+- ✅ **Cloud Client** - HTTP client for cloud backend communication
+- ✅ **HTTP/WebSocket Server** - Port 8080, REST API + streaming
+- ✅ **Workspace Indexing** - Full codebase analysis and indexing
 
-### 2. VS Code Extension
+### 2. VS Code Extension (Updated) ✅
 - ✅ **Project Structure** - package.json, TypeScript setup
 - ✅ **Extension Activation** - Registers commands, views
-- ✅ **Workspace Analyzer Integration** - Calls Go binary to analyze framework
+- ✅ **CoreClient** - Updated to communicate with local backend
+- ✅ **HTTP/WebSocket Support** - Both standard and streaming APIs
 
-### 3. Core Features Implemented
-- ✅ Parse Java test frameworks (Selenium + TestNG/JUnit/Cucumber)
-- ✅ Detect Page Objects, Test Cases, Step Definitions
-- ✅ Extract locators (@FindBy, By.xxx)
-- ✅ Smart prompts for PageObject/Test generation
-- ✅ Match existing code style
+### 3. Documentation ✅
+- ✅ **Cloud Architecture Guide** - Complete architecture explanation
+- ✅ **Cloud Backend API Spec** - Full API specification for implementation
+- ✅ **Quick Start Guide** - Step-by-step setup instructions
+- ✅ **Backend README** - Complete API documentation
+
+### 4. Cloud Backend (To Implement) 🚧
+- ⬜ Prompt engineering layer
+- ⬜ GPT-4 integration
+- ⬜ User authentication
+- ⬜ Usage tracking and billing
+- ⬜ Rate limiting
+- ⬜ Streaming implementation
+
+See [CLOUD_BACKEND_SPEC.md](CLOUD_BACKEND_SPEC.md) for implementation details.
 
 ## 🚀 How It Works
 
@@ -102,97 +144,123 @@ test-automation-copilot/
 ```
 User opens VS Code with Selenium Java project
 ↓
-Extension activates
+Extension activates → starts local backend (port 8080)
 ↓
-Calls Go binary: POST /analyze {"workspacePath": "/path"}
+Extension calls: POST /api/v1/workspace/index
 ↓
-Go parses all .java files using tree-sitter
+Local backend parses all .java files using tree-sitter
 ↓
 Extracts: Page Objects, Tests, Locators, Patterns
 ↓
-Stores in local SQLite + vector embeddings
+Stores in local SQLite + generates vector embeddings
 ↓
 Extension shows: "Found 5 page objects, 12 tests"
 ```
 
-### 2. User Chats
+### 2. User Generates Code (Page Object Example)
 ```
-User: "Create login page object"
+User: "Create login page object with username and password"
 ↓
-Extension sends to Go: POST /chat
+Extension calls: POST /api/v1/generate/pageobject
 ↓
-Go performs semantic search for relevant code
+Local Backend:
+  - Semantic search for similar page objects
+  - Extract relevant code snippets
+  - Detect framework (selenium-java) and test runner (testng)
+  - Build ContextPayload (NO PROMPTS)
 ↓
-Builds context-aware prompt using existing code style
+Cloud Backend (Your Server):
+  - Receive ContextPayload
+  - Apply prompt engineering (SECRET)
+  - Call OpenAI GPT-4 with assembled prompt
+  - Stream response back
 ↓
-Calls LLM (OpenAI/Claude)
+Local Backend: Forward stream to extension
 ↓
-Returns generated code matching user's framework
-↓
-Extension shows code preview
+Extension displays code in real-time
 ↓
 User approves → writes to file
 ```
 
-### 3. Element Recording (Coming Soon)
+### 3. Environment Variables
+```bash
+# For Local Backend
+export TESTCOPILOT_CLOUD_URL="https://api.testcopilot.ai"
+export TESTCOPILOT_API_KEY="tc_prod_xxxxxxxxxxxxx"
+
+# Start local backend
+./test-copilot-server --port 8080
 ```
-User: "Record login page elements"
-↓
-Extension opens Playwright browser
-↓
-User clicks elements on live page
-↓
-Extension captures locators + validates stability
-↓
-Sends to Go: POST /generate
-↓
-Go generates Page Object class
-↓
-Returns complete .java file
+
+### 4. Extension Configuration (VS Code Settings)
+```json
+{
+  "testCopilot.cloudUrl": "https://api.testcopilot.ai",
+  "testCopilot.apiKey": "tc_prod_xxxxxxxxxxxxx",
+  "testCopilot.localBackendPort": 8080
+}
 ```
 
 ## 🔐 IP Protection Strategy
 
-### What's Protected (Go Binary)
-1. **AST Parsing Logic** - How we extract framework structure
-2. **Prompt Templates** - The secret to good code generation
-3. **Context Building** - How we select relevant code
-4. **Pattern Matching** - How we learn user's style
-5. **Locator Scoring** - How we rank locator stability
+### What's Protected (Cloud Backend) 🔒
+1. **Prompt Templates** - Your competitive advantage
+2. **Few-shot Examples** - Refined over time
+3. **Context Assembly Logic** - How you combine context
+4. **Model Selection** - Which models for which tasks
+5. **LLM Orchestration** - Your secret sauce
 
-### What's Public (Extension)
-- UI components
-- VS Code integration
-- File operations
-- Basic settings
+### What's Local (Open Source)
+- ✅ Database and indexing (preprocessor)
+- ✅ Vector search (semantic matching)
+- ✅ Context extraction (data preparation)
+- ✅ HTTP/WebSocket server
+- ✅ VS Code extension (UI/UX)
 
-### Distribution
-- Extension: Published to VS Code Marketplace (free)
-- Go Binary: Compiled, distributed with extension
-- Users can't easily extract prompts/algorithms from binary
+### Why This Matters
+- Users **cannot inspect** your prompts by examining network traffic
+- You **can update** prompts without releasing new client versions
+- You **own the IP** that makes your product unique
+- Similar to how **Cursor** and **GitHub Copilot** work
 
 ### Monetization Options
-1. **Freemium**: Free tier (limited AI calls), paid tier (unlimited)
-2. **API Key Model**: Users provide own OpenAI/Claude key + pay for extension ($49 one-time)
-3. **Cloud Hybrid**: Basic features local, advanced features via your API
+1. **SaaS Model**: $20/month for 1000 generations (recommended)
+2. **API-as-a-Service**: Pay-per-request pricing
+3. **Enterprise**: Custom pricing for teams
+4. **Freemium**: 100 free requests/month, then paid
+
+**Profit Margin**: ~$5-10/user/month after OpenAI costs
 
 ## 🛠️ Development Status
 
-### ✅ Completed
-- [x] Project structure
-- [x] Go binary scaffolding
-- [x] Java AST parser (Go)
-- [x] Prompt engineering system (Go)
-- [x] VS Code extension scaffolding
-- [x] Workspace analyzer
+### ✅ Local Backend (Completed)
+- [x] SQLite database with full schema
+- [x] Vector database (chromem-go) integration
+- [x] OpenAI embeddings service
+- [x] Semantic search (code, page objects, tests)
+- [x] Java/Gherkin/XML parsers (tree-sitter)
+- [x] Workspace indexing
+- [x] Context extraction (4 types)
+- [x] Cloud client implementation
+- [x] HTTP/WebSocket server
+- [x] Health checks and stats endpoints
 
-### 🚧 In Progress
-- [ ] LLM integration (Go)
-- [ ] Code generation engine (Go)
-- [ ] Context builder (Go)
-- [ ] Storage manager (Go)
-- [ ] Extension ↔ Go communication
-- [ ] Chat UI (webview)
+### ✅ Documentation (Completed)
+- [x] Cloud architecture guide
+- [x] Cloud backend API specification
+- [x] Quick start guide
+- [x] Backend README with examples
+- [x] Integration tests
+
+### 🚧 Next Steps
+- [ ] Implement cloud backend (separate repository)
+- [ ] Update VS Code extension configuration UI
+- [ ] Add API key management UI
+- [ ] Add usage statistics display
+- [ ] Create prompt templates library
+- [ ] Set up user authentication & billing
+- [ ] Deploy cloud backend to production
+- [ ] Launch beta testing program
 
 ### 📋 To Do
 - [ ] Element picker integration (from KrisiAI)
