@@ -1,8 +1,6 @@
 import * as vscode from 'vscode';
-import { WorkspaceAnalyzer } from './core/analyzers/WorkspaceAnalyzer';
 import { ChatPanelProvider } from './ui/ChatPanelProvider';
 import { ElementRecorder } from './browser/ElementRecorder';
-import { StorageManager } from './core/storage/StorageManager';
 import { CoreClient } from './api/CoreClient';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -20,6 +18,8 @@ export async function activate(context: vscode.ExtensionContext) {
         }, async () => {
             await coreClient.startServer();
         });
+
+        vscode.window.showInformationMessage('✅ Copilot Core started successfully!');
     } catch (error) {
         vscode.window.showWarningMessage(
             `Copilot Core failed to start: ${error}. Some features may be limited.`,
@@ -27,7 +27,7 @@ export async function activate(context: vscode.ExtensionContext) {
         ).then(selection => {
             if (selection === 'Build Binary') {
                 vscode.window.showInformationMessage(
-                    'Please build the Go binary:\ncd copilot-core && go build -o copilot-core main.go'
+                    'Please build the Go binary:\ncd copilot-core && go build -o server main.go'
                 );
             }
         });
@@ -37,15 +37,8 @@ export async function activate(context: vscode.ExtensionContext) {
         dispose: () => coreClient.stopServer()
     });
 
-    // Initialize storage (SQLite + ChromaDB)
-    const storageManager = new StorageManager(context.globalStorageUri.fsPath);
-    await storageManager.initialize();
-
-    // Initialize workspace analyzer
-    const workspaceAnalyzer = new WorkspaceAnalyzer(storageManager);
-
-    // Initialize chat panel
-    const chatProvider = new ChatPanelProvider(context.extensionUri, storageManager, workspaceAnalyzer, coreClient);
+    // Initialize chat panel (no more local storage/analyzer needed)
+    const chatProvider = new ChatPanelProvider(context.extensionUri, coreClient);
 
     // Initialize element recorder
     const elementRecorder = new ElementRecorder(chatProvider);
@@ -70,11 +63,11 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('testCopilot.analyzeWorkspace', async () => {
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: "Analyzing test framework...",
+                title: "Indexing workspace...",
                 cancellable: false
             }, async (progress) => {
                 try {
-                    progress.report({ increment: 0, message: "Scanning workspace..." });
+                    progress.report({ increment: 0, message: "Starting indexing..." });
 
                     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
                     if (!workspaceFolder) {
@@ -82,22 +75,29 @@ export async function activate(context: vscode.ExtensionContext) {
                         return;
                     }
 
-                    progress.report({ increment: 30, message: "Parsing Java files..." });
-                    const analysis = await workspaceAnalyzer.analyzeWorkspace(workspaceFolder.uri.fsPath);
+                    progress.report({ increment: 20, message: "Indexing files in Go backend..." });
 
-                    progress.report({ increment: 60, message: "Building context..." });
-                    await storageManager.storeAnalysis(analysis);
+                    // Call Go backend indexing API
+                    await coreClient.indexWorkspace(workspaceFolder.uri.fsPath);
+
+                    progress.report({ increment: 70, message: "Fetching workspace stats..." });
+
+                    // Get statistics
+                    const stats = await coreClient.getWorkspaceStats();
 
                     progress.report({ increment: 100, message: "Complete!" });
 
                     vscode.window.showInformationMessage(
-                        `Framework analyzed! Found: ${analysis.pageObjects.length} page objects, ${analysis.testCases.length} tests`
+                        `✅ Workspace indexed!\n` +
+                        `📁 ${stats.files} files\n` +
+                        `📦 ${stats.classes} classes\n` +
+                        `📄 ${stats.pageObjects} page objects\n` +
+                        `✅ ${stats.testMethods} test methods\n` +
+                        `🔍 ${stats.vectorDocs} code chunks indexed for semantic search`
                     );
 
-                    // Send to chat panel
-                    chatProvider.sendAnalysisResults(analysis);
                 } catch (error) {
-                    vscode.window.showErrorMessage(`Analysis failed: ${error}`);
+                    vscode.window.showErrorMessage(`Indexing failed: ${error}`);
                 }
             });
         })

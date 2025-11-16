@@ -2,27 +2,19 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { RecordingSession, ApplicationMap } from '../browser/types';
-import { WorkspaceAnalyzer } from '../core/analyzers/WorkspaceAnalyzer';
-import { StorageManager } from '../core/storage/StorageManager';
 import { CoreClient } from '../api/CoreClient';
 
 export class ChatPanelProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'testCopilot.chatView';
     private _view?: vscode.WebviewView;
     private extensionUri: vscode.Uri;
-    private storageManager: StorageManager;
-    private workspaceAnalyzer: WorkspaceAnalyzer;
     private coreClient: CoreClient;
 
     constructor(
         extensionUri: vscode.Uri,
-        storageManager: StorageManager,
-        workspaceAnalyzer: WorkspaceAnalyzer,
         coreClient: CoreClient
     ) {
         this.extensionUri = extensionUri;
-        this.storageManager = storageManager;
-        this.workspaceAnalyzer = workspaceAnalyzer;
         this.coreClient = coreClient;
     }
 
