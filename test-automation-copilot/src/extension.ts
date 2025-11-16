@@ -193,6 +193,82 @@ export async function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // Semantic search test command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('testCopilot.testSemanticSearch', async () => {
+            const query = await vscode.window.showInputBox({
+                prompt: 'What would you like to search for?',
+                placeHolder: 'e.g., login page object, test for checkout'
+            });
+
+            if (!query) return;
+
+            try {
+                // Test all three search endpoints
+                const [codeResults, pageObjectResults, testResults] = await Promise.all([
+                    coreClient.searchCode(query, 5),
+                    coreClient.searchPageObjects(query, 3),
+                    coreClient.searchTests(query, 3)
+                ]);
+
+                // Display results
+                const output = vscode.window.createOutputChannel('Test Copilot Search Results');
+                output.clear();
+                output.show();
+
+                output.appendLine('🔍 Semantic Search Results');
+                output.appendLine('='.repeat(60));
+                output.appendLine(`Query: "${query}"\n`);
+
+                output.appendLine('📄 Code Results:');
+                output.appendLine('-'.repeat(60));
+                if (codeResults.length === 0) {
+                    output.appendLine('  No results found');
+                } else {
+                    codeResults.forEach((result, i) => {
+                        output.appendLine(`  ${i + 1}. ${result.name} (${result.type})`);
+                        output.appendLine(`     Similarity: ${(result.similarity * 100).toFixed(1)}%`);
+                        output.appendLine(`     File: ${result.filePath}:${result.lineNumber || 'N/A'}`);
+                        output.appendLine('');
+                    });
+                }
+
+                output.appendLine('\n📦 Page Object Results:');
+                output.appendLine('-'.repeat(60));
+                if (pageObjectResults.length === 0) {
+                    output.appendLine('  No results found');
+                } else {
+                    pageObjectResults.forEach((result, i) => {
+                        output.appendLine(`  ${i + 1}. ${result.name}`);
+                        output.appendLine(`     Similarity: ${(result.similarity * 100).toFixed(1)}%`);
+                        output.appendLine(`     File: ${result.filePath}:${result.lineNumber || 'N/A'}`);
+                        output.appendLine('');
+                    });
+                }
+
+                output.appendLine('\n✅ Test Results:');
+                output.appendLine('-'.repeat(60));
+                if (testResults.length === 0) {
+                    output.appendLine('  No results found');
+                } else {
+                    testResults.forEach((result, i) => {
+                        output.appendLine(`  ${i + 1}. ${result.name}`);
+                        output.appendLine(`     Similarity: ${(result.similarity * 100).toFixed(1)}%`);
+                        output.appendLine(`     File: ${result.filePath}:${result.lineNumber || 'N/A'}`);
+                        output.appendLine('');
+                    });
+                }
+
+                vscode.window.showInformationMessage(
+                    `Found ${codeResults.length} code results, ${pageObjectResults.length} page objects, ${testResults.length} tests`
+                );
+
+            } catch (error) {
+                vscode.window.showErrorMessage(`Search failed: ${error}`);
+            }
+        })
+    );
+
     // Check cloud configuration
     const config = vscode.workspace.getConfiguration('testCopilot');
     const apiKey = config.get<string>('apiKey');
