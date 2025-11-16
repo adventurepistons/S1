@@ -133,7 +133,13 @@
         },
         "testCopilot.framework": {
           "type": "string",
-          "enum": ["selenium-java", "selenium-python", "playwright-ts", "playwright-js", "cypress"],
+          "enum": [
+            "selenium-java",
+            "selenium-python",
+            "playwright-ts",
+            "playwright-js",
+            "cypress"
+          ],
           "description": "Test framework (auto-detected if not set)"
         },
         "testCopilot.enableUsageTracking": {
@@ -159,24 +165,26 @@
     "package": "vsce package"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.10.0",
     "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
-    "eslint": "^8.54.0",
-    "typescript": "^5.3.2",
     "@vscode/test-electron": "^2.3.8",
-    "@vscode/vsce": "^2.22.0"
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.2"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",
-    "openai": "^4.20.0",
-    "playwright": "^1.40.0",
-    "java-parser": "^2.0.0",
-    "tree-sitter": "^0.20.0",
-    "tree-sitter-java": "^0.20.0",
+    "axios": "^1.6.0",
     "better-sqlite3": "^9.2.0",
     "chromadb": "^1.7.0",
-    "axios": "^1.6.0"
+    "java-parser": "^2.0.0",
+    "openai": "^4.20.0",
+    "playwright": "^1.40.0",
+    "tree-sitter": "^0.20.0",
+    "tree-sitter-java": "^0.20.0"
   }
 }

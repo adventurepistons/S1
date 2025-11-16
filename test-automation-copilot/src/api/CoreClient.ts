@@ -407,7 +407,7 @@ export class CoreClient {
                     }
                 });
 
-                this.wsClient.on('error', (err) => {
+                this.wsClient.on('error', (err: Error) => {
                     onError(err.message);
                     reject(err);
                 });

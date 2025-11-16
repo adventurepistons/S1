@@ -176,7 +176,7 @@ export class BrowserRecorder {
                         }
 
                         if (current.className) {
-                            const classes = current.className.split(' ').filter(c => c);
+                            const classes = current.className.split(' ').filter((c: string) => c);
                             if (classes.length > 0) {
                                 selector += `.${classes[0]}`;
                             }
