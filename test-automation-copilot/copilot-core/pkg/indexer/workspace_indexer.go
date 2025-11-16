@@ -26,9 +26,10 @@ type WorkspaceIndexer struct {
 	gherkinIndexer  *GherkinIndexer
 	xmlIndexer      *XMLIndexer
 
-	mu              sync.Mutex
-	indexedFiles    map[string]string // path -> hash
-	indexingStats   *IndexingStats
+	mu               sync.Mutex
+	indexedFiles     map[string]string // path -> hash
+	indexingStats    *IndexingStats
+	progressCallback func(stats *IndexingStats)
 }
 
 // IndexingStats tracks indexing progress
@@ -62,17 +63,18 @@ type IndexerConfig struct {
 // NewWorkspaceIndexer creates a new workspace indexer
 func NewWorkspaceIndexer(db *database.DB, config IndexerConfig) *WorkspaceIndexer {
 	return &WorkspaceIndexer{
-		db:              db,
-		workspacePath:   config.WorkspacePath,
-		fileRepo:        database.NewFileRepository(db),
-		classRepo:       database.NewClassRepository(db),
-		methodRepo:      database.NewMethodRepository(db),
-		depRepo:         database.NewDependencyRepository(db),
-		javaIndexer:     NewJavaIndexer(db),
-		gherkinIndexer:  NewGherkinIndexer(db),
-		xmlIndexer:      NewXMLIndexer(db),
-		indexedFiles:    make(map[string]string),
-		indexingStats:   &IndexingStats{},
+		db:               db,
+		workspacePath:    config.WorkspacePath,
+		fileRepo:         database.NewFileRepository(db),
+		classRepo:        database.NewClassRepository(db),
+		methodRepo:       database.NewMethodRepository(db),
+		depRepo:          database.NewDependencyRepository(db),
+		javaIndexer:      NewJavaIndexer(db),
+		gherkinIndexer:   NewGherkinIndexer(db),
+		xmlIndexer:       NewXMLIndexer(db),
+		indexedFiles:     make(map[string]string),
+		indexingStats:    &IndexingStats{},
+		progressCallback: config.ProgressCallback, // Store the callback
 	}
 }
 
@@ -93,6 +95,11 @@ func (idx *WorkspaceIndexer) IndexWorkspace() (*IndexingStats, error) {
 	idx.indexingStats.TotalFiles = len(files)
 	fmt.Printf("📁 Found %d files to index\n", len(files))
 
+	// Call progress callback at start
+	if idx.progressCallback != nil {
+		idx.progressCallback(idx.indexingStats)
+	}
+
 	// Index each file
 	for i, filePath := range files {
 		if err := idx.indexFile(filePath); err != nil {
@@ -105,6 +112,11 @@ func (idx *WorkspaceIndexer) IndexWorkspace() (*IndexingStats, error) {
 		// Progress update every 10 files
 		if (i+1)%10 == 0 {
 			fmt.Printf("📊 Progress: %d/%d files indexed\n", i+1, len(files))
+
+			// Call progress callback if provided
+			if idx.progressCallback != nil {
+				idx.progressCallback(idx.indexingStats)
+			}
 		}
 	}
 
@@ -125,6 +137,11 @@ func (idx *WorkspaceIndexer) IndexWorkspace() (*IndexingStats, error) {
 	idx.indexingStats.TotalDependencies = int(dbStats.DependencyCount)
 
 	idx.printSummary()
+
+	// Call progress callback at completion
+	if idx.progressCallback != nil {
+		idx.progressCallback(idx.indexingStats)
+	}
 
 	return idx.indexingStats, nil
 }
