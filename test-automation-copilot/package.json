@@ -79,6 +79,11 @@
       {
         "command": "testCopilot.generatePageObject",
         "title": "Test Copilot: Generate Page Object"
+      },
+      {
+        "command": "testCopilot.showUsageStats",
+        "title": "Test Copilot: Show Usage Statistics",
+        "icon": "$(graph)"
       }
     ],
     "viewsContainers": {
@@ -106,21 +111,20 @@
     "configuration": {
       "title": "Test Automation Copilot",
       "properties": {
-        "testCopilot.llmProvider": {
+        "testCopilot.cloudUrl": {
           "type": "string",
-          "default": "openai",
-          "enum": ["openai", "anthropic", "local"],
-          "description": "LLM provider to use"
+          "default": "https://api.testcopilot.ai",
+          "description": "Cloud backend URL for AI processing"
         },
-        "testCopilot.openaiApiKey": {
+        "testCopilot.apiKey": {
           "type": "string",
           "default": "",
-          "description": "OpenAI API Key (stored securely)"
+          "description": "Your Test Copilot API key (get from https://testcopilot.ai)"
         },
-        "testCopilot.anthropicApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Anthropic API Key (stored securely)"
+        "testCopilot.localBackendPort": {
+          "type": "number",
+          "default": 8080,
+          "description": "Local backend server port"
         },
         "testCopilot.autoAnalyze": {
           "type": "boolean",
@@ -131,6 +135,16 @@
           "type": "string",
           "enum": ["selenium-java", "selenium-python", "playwright-ts", "playwright-js", "cypress"],
           "description": "Test framework (auto-detected if not set)"
+        },
+        "testCopilot.enableUsageTracking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show usage statistics in status bar"
+        },
+        "testCopilot.streamingEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable streaming responses for faster feedback"
         }
       }
     }

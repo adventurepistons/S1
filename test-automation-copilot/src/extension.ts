@@ -9,7 +9,7 @@ export async function activate(context: vscode.ExtensionContext) {
     console.log('Test Automation Copilot is now active!');
 
     // Initialize Core Client (Go binary)
-    const coreClient = new CoreClient(context.extensionPath);
+    const coreClient = new CoreClient(context.extensionPath, context);
     (global as any).testCopilotCoreClient = coreClient; // Store globally for deactivate
 
     try {
@@ -193,8 +193,97 @@ export async function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // Auto-analyze workspace on activation if enabled
+    // Check cloud configuration
     const config = vscode.workspace.getConfiguration('testCopilot');
+    const apiKey = config.get<string>('apiKey');
+
+    if (!apiKey || apiKey === '') {
+        vscode.window.showWarningMessage(
+            'Test Copilot API key not configured. AI features will not work.',
+            'Configure Now',
+            'Get API Key'
+        ).then(selection => {
+            if (selection === 'Configure Now') {
+                vscode.commands.executeCommand('workbench.action.openSettings', 'testCopilot.apiKey');
+            } else if (selection === 'Get API Key') {
+                vscode.env.openExternal(vscode.Uri.parse('https://testcopilot.ai/signup'));
+            }
+        });
+    }
+
+    // Create status bar item for usage tracking
+    if (config.get('enableUsageTracking', true)) {
+        const statusBarItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            100
+        );
+        statusBarItem.text = '$(cloud) Test Copilot';
+        statusBarItem.tooltip = 'Click to view usage statistics';
+        statusBarItem.command = 'testCopilot.showUsageStats';
+        statusBarItem.show();
+        context.subscriptions.push(statusBarItem);
+
+        // Update usage stats periodically (every 5 minutes)
+        const updateStats = async () => {
+            const stats = await coreClient.getUsageStats();
+            if (stats) {
+                statusBarItem.text = `$(cloud) ${stats.usage.requestsThisMonth}/${stats.limits.requestsPerMonth}`;
+                statusBarItem.tooltip = `Test Copilot Usage:\n${stats.usage.requestsThisMonth} requests this month\n${stats.limits.requestsRemaining} remaining`;
+            }
+        };
+
+        // Initial update
+        setTimeout(updateStats, 5000);
+
+        // Periodic updates
+        const interval = setInterval(updateStats, 300000); // 5 minutes
+        context.subscriptions.push({
+            dispose: () => clearInterval(interval)
+        });
+    }
+
+    // Add command to show usage statistics
+    context.subscriptions.push(
+        vscode.commands.registerCommand('testCopilot.showUsageStats', async () => {
+            const stats = await coreClient.getUsageStats();
+            if (stats) {
+                const message = `
+**Test Copilot Usage Statistics**
+
+**Plan**: ${stats.plan}
+**Requests This Month**: ${stats.usage.requestsThisMonth} / ${stats.limits.requestsPerMonth}
+**Tokens This Month**: ${stats.usage.tokensThisMonth.toLocaleString()}
+**Estimated Cost**: $${stats.usage.estimatedCost.toFixed(2)}
+
+**Requests by Type:**
+- Page Objects: ${stats.usage.requestsByAction.pageobject}
+- Tests: ${stats.usage.requestsByAction.test}
+- Chat: ${stats.usage.requestsByAction.chat}
+- Fixes: ${stats.usage.requestsByAction.fix}
+
+**Remaining**: ${stats.limits.requestsRemaining} requests
+                `.trim();
+
+                vscode.window.showInformationMessage(message, 'Upgrade Plan', 'Close')
+                    .then(selection => {
+                        if (selection === 'Upgrade Plan') {
+                            vscode.env.openExternal(vscode.Uri.parse('https://testcopilot.ai/pricing'));
+                        }
+                    });
+            } else {
+                vscode.window.showInformationMessage(
+                    'Usage statistics not available. Make sure your API key is configured and cloud backend is accessible.',
+                    'Configure API Key'
+                ).then(selection => {
+                    if (selection === 'Configure API Key') {
+                        vscode.commands.executeCommand('workbench.action.openSettings', 'testCopilot.apiKey');
+                    }
+                });
+            }
+        })
+    );
+
+    // Auto-analyze workspace on activation if enabled
     if (config.get('autoAnalyze', true)) {
         setTimeout(() => {
             vscode.commands.executeCommand('testCopilot.analyzeWorkspace');

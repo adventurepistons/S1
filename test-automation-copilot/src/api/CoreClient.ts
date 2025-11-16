@@ -37,6 +37,35 @@ export interface ChatResponse {
     finishReason: string;
 }
 
+export interface UsageStats {
+    userId: string;
+    plan: string;
+    period: {
+        start: number;
+        end: number;
+        current: number;
+    };
+    usage: {
+        totalRequests: number;
+        totalTokens: number;
+        estimatedCost: number;
+        requestsThisMonth: number;
+        tokensThisMonth: number;
+        requestsByAction: {
+            pageobject: number;
+            test: number;
+            chat: number;
+            fix: number;
+        };
+    };
+    limits: {
+        requestsPerMonth: number;
+        tokensPerMonth: number;
+        requestsRemaining: number;
+        tokensRemaining: number;
+    };
+}
+
 export class CoreClient {
     private serverProcess?: child_process.ChildProcess;
     private axiosClient: AxiosInstance;
@@ -44,7 +73,11 @@ export class CoreClient {
     private port: number = 8080;
     private isServerRunning: boolean = false;
 
-    constructor(private extensionPath: string) {
+    constructor(private extensionPath: string, private context: vscode.ExtensionContext) {
+        // Read port from configuration
+        const config = vscode.workspace.getConfiguration('testCopilot');
+        this.port = config.get<number>('localBackendPort') || 8080;
+
         this.axiosClient = axios.create({
             baseURL: `http://localhost:${this.port}`,
             timeout: 60000, // 60 seconds for LLM operations
@@ -71,6 +104,11 @@ export class CoreClient {
                 throw new Error('Copilot core binary not found. Please build the Go binary first.');
             }
 
+            // Get cloud configuration
+            const config = vscode.workspace.getConfiguration('testCopilot');
+            const cloudUrl = config.get<string>('cloudUrl') || 'https://api.testcopilot.ai';
+            const apiKey = config.get<string>('apiKey') || '';
+
             // Start the server process
             this.serverProcess = child_process.spawn(binaryPath, [
                 '--port', this.port.toString(),
@@ -79,6 +117,8 @@ export class CoreClient {
             ], {
                 env: {
                     ...process.env,
+                    TESTCOPILOT_CLOUD_URL: cloudUrl,
+                    TESTCOPILOT_API_KEY: apiKey
                 }
             });
 
@@ -411,6 +451,21 @@ export class CoreClient {
         }
 
         return generatedFiles;
+    }
+
+    /**
+     * Get usage statistics from cloud backend
+     */
+    public async getUsageStats(): Promise<UsageStats | null> {
+        try {
+            // This would call the cloud backend through local backend
+            // For now, returning null as cloud backend is not implemented yet
+            // TODO: Implement once cloud backend is ready
+            return null;
+        } catch (error) {
+            console.error('Failed to get usage stats:', error);
+            return null;
+        }
     }
 
     /**
