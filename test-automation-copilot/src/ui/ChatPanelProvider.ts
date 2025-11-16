@@ -52,6 +52,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Test Copilot Chat</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.0/marked.min.js"></script>
     <style>
         body {
             padding: 10px;
@@ -121,6 +124,42 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         .page-item:hover {
             background: var(--vscode-list-hoverBackground);
         }
+        pre {
+            background: var(--vscode-textBlockQuote-background);
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: var(--vscode-editor-font-family);
+            font-size: 13px;
+        }
+        .streaming-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: var(--vscode-editorCursor-foreground);
+            animation: blink 1s infinite;
+            margin-left: 2px;
+        }
+        @keyframes blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
+        }
+        .message-content {
+            line-height: 1.6;
+        }
+        .message-content p {
+            margin: 8px 0;
+        }
+        .message-content ul, .message-content ol {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+        .thinking {
+            opacity: 0.7;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -146,6 +185,19 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
     <script>
         const vscode = acquireVsCodeApi();
+        let currentStreamingMessage = null;
+        let streamingContent = '';
+
+        // Configure marked.js for syntax highlighting
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    return hljs.highlight(code, { language: lang }).value;
+                }
+                return hljs.highlightAuto(code).value;
+            },
+            breaks: true
+        });
 
         function sendMessage() {
             const input = document.getElementById('messageInput');
@@ -168,9 +220,92 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             const messagesDiv = document.getElementById('messages');
             const messageDiv = document.createElement('div');
             messageDiv.className = role === 'user' ? 'user-message message' : 'assistant-message message';
-            messageDiv.innerHTML = '<strong>' + (role === 'user' ? 'You' : 'Copilot') + '</strong><p>' + content + '</p>';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            const header = document.createElement('strong');
+            header.textContent = role === 'user' ? 'You' : 'Copilot';
+
+            messageDiv.appendChild(header);
+            contentDiv.innerHTML = marked.parse(content);
+            messageDiv.appendChild(contentDiv);
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            // Apply syntax highlighting to code blocks
+            messageDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+
+            return messageDiv;
+        }
+
+        function startStreaming() {
+            const messagesDiv = document.getElementById('messages');
+            currentStreamingMessage = document.createElement('div');
+            currentStreamingMessage.className = 'assistant-message message';
+
+            const header = document.createElement('strong');
+            header.textContent = 'Copilot';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.id = 'streaming-content';
+
+            const cursor = document.createElement('span');
+            cursor.className = 'streaming-cursor';
+            cursor.id = 'streaming-cursor';
+
+            currentStreamingMessage.appendChild(header);
+            currentStreamingMessage.appendChild(contentDiv);
+            currentStreamingMessage.appendChild(cursor);
+            messagesDiv.appendChild(currentStreamingMessage);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            streamingContent = '';
+        }
+
+        function appendStreamChunk(chunk) {
+            if (!currentStreamingMessage) return;
+
+            streamingContent += chunk;
+            const contentDiv = document.getElementById('streaming-content');
+            if (contentDiv) {
+                // Render markdown in real-time
+                contentDiv.innerHTML = marked.parse(streamingContent);
+
+                // Apply syntax highlighting
+                contentDiv.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+
+                // Scroll to bottom
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        }
+
+        function completeStreaming() {
+            if (!currentStreamingMessage) return;
+
+            // Remove cursor
+            const cursor = document.getElementById('streaming-cursor');
+            if (cursor) {
+                cursor.remove();
+            }
+
+            // Final render
+            const contentDiv = document.getElementById('streaming-content');
+            if (contentDiv) {
+                contentDiv.innerHTML = marked.parse(streamingContent);
+                contentDiv.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
+
+            currentStreamingMessage = null;
+            streamingContent = '';
         }
 
         // Handle Enter key
@@ -187,6 +322,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             switch (message.type) {
                 case 'response':
                     addMessage('assistant', message.content);
+                    break;
+                case 'streamStart':
+                    startStreaming();
+                    break;
+                case 'streamChunk':
+                    appendStreamChunk(message.chunk);
+                    break;
+                case 'streamComplete':
+                    completeStreaming();
                     break;
                 case 'recordingResults':
                     showRecordingResults(message.session);
@@ -232,8 +376,35 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     }
 
     private async handleChatMessage(message: string): Promise<void> {
-        // TODO: Send to Go binary for processing
-        this.sendResponse(`You said: ${message}. (AI integration coming soon...)`);
+        // Check if Core Client is running
+        if (!this.coreClient.isRunning()) {
+            this.sendResponse('❌ Copilot Core is not running. Please restart the extension.');
+            return;
+        }
+
+        // Start streaming response
+        this.sendStreamStart();
+
+        try {
+            await this.coreClient.generateWithStreaming(
+                'chat',
+                { message },
+                // On chunk received
+                (chunk: string) => {
+                    this.sendStreamChunk(chunk);
+                },
+                // On complete
+                (result) => {
+                    this.sendStreamComplete();
+                },
+                // On error
+                (error: string) => {
+                    this.sendResponse(`❌ Error: ${error}`);
+                }
+            );
+        } catch (error) {
+            this.sendResponse(`❌ Chat failed: ${error}`);
+        }
     }
 
     private async handleCodeGeneration(spec: any): Promise<void> {
@@ -246,6 +417,31 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             this._view.webview.postMessage({
                 type: 'response',
                 content
+            });
+        }
+    }
+
+    private sendStreamStart(): void {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'streamStart'
+            });
+        }
+    }
+
+    private sendStreamChunk(chunk: string): void {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'streamChunk',
+                chunk
+            });
+        }
+    }
+
+    private sendStreamComplete(): void {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'streamComplete'
             });
         }
     }
