@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { UserModel } from '../models/User';
+import { UserModel, User } from '../models/User';
 import { UsageModel } from '../models/Usage';
 import { config } from '../config';
 import logger from '../utils/logger';
@@ -8,7 +8,7 @@ import logger from '../utils/logger';
 declare global {
   namespace Express {
     interface Request {
-      user?: any;
+      user?: User;
       userId?: string;
     }
   }

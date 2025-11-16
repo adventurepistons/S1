@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth';
 import { PromptService, ContextPayload } from '../services/PromptService';
 import openAIService from '../services/OpenAIService';
 import { UsageModel } from '../models/Usage';
+import { config } from '../config';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -79,30 +80,40 @@ router.post('/generate/stream', authenticate, async (req: Request, res: Response
     // Stream generation
     const stream = openAIService.generateStream(systemPrompt, userPrompt);
 
+    let finalResult: { code: string; tokensUsed: number; model: string } | undefined;
+
     for await (const chunk of stream) {
-      res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`);
+      // Check if this is the final result or a chunk
+      if (typeof chunk === 'string') {
+        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`);
+      } else {
+        // This is the return value from the generator
+        finalResult = chunk;
+      }
     }
 
-    // Get final result
-    const result = await stream.return({ code: '', tokensUsed: 0, model: '' });
+    // If we didn't get a final result, create a default one
+    if (!finalResult) {
+      finalResult = { code: '', tokensUsed: 0, model: config.openai.model };
+    }
 
     // Track usage
     await UsageModel.record(
       req.userId!,
       context.action as any,
-      result.value.tokensUsed,
-      result.value.model
+      finalResult.tokensUsed,
+      finalResult.model
     );
 
-    logger.info(`[${req.userId}] Stream complete: ${result.value.tokensUsed} tokens`);
+    logger.info(`[${req.userId}] Stream complete: ${finalResult.tokensUsed} tokens`);
 
     // Send completion
     res.write(`data: ${JSON.stringify({
       type: 'complete',
       result: {
-        code: result.value.code,
-        tokensUsed: result.value.tokensUsed,
-        model: result.value.model,
+        code: finalResult.code,
+        tokensUsed: finalResult.tokensUsed,
+        model: finalResult.model,
         finishReason: 'stop'
       }
     })}\n\n`);

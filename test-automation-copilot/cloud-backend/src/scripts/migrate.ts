@@ -64,7 +64,7 @@ async function runMigrations() {
 
     // Check which migrations have been applied
     const result = await client.query('SELECT name FROM migrations');
-    const appliedMigrations = new Set(result.rows.map(row => row.name));
+    const appliedMigrations = new Set(result.rows.map((row: { name: string }) => row.name));
 
     // Run pending migrations
     for (const migration of migrations) {

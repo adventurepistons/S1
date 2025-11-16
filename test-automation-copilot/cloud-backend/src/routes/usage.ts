@@ -12,13 +12,13 @@ const router = Router();
 router.get('/usage', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
-    const user = req.user;
+    const user = req.user!;
 
     // Get monthly stats
     const stats = await UsageModel.getMonthlyStats(userId);
 
     // Get plan limits
-    const planLimits = config.plans[user.plan];
+    const planLimits = config.plans[user.plan as keyof typeof config.plans];
 
     // Calculate period dates
     const now = new Date();

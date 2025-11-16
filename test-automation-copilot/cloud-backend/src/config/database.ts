@@ -19,7 +19,7 @@ pool.on('connect', () => {
   logger.info('Database connected successfully');
 });
 
-pool.on('error', (err) => {
+pool.on('error', (err: Error) => {
   logger.error('Unexpected database error:', err);
   process.exit(-1);
 });

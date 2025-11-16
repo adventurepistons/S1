@@ -302,7 +302,7 @@ Your task is to fix broken test automation code:
         prompt += `### Example ${i + 1}: ${code.name}\n`;
         prompt += '```java\n';
         prompt += code.content.substring(0, 500);
-        prompt += '\n```\n\n`;
+        prompt += '\n```\n\n';
       });
     }
 
