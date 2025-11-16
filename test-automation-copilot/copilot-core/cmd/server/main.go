@@ -8,9 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/yourusername/copilot-core/pkg/cloud"
+	pkgcontext "github.com/yourusername/copilot-core/pkg/context"
 	"github.com/yourusername/copilot-core/pkg/database"
 	"github.com/yourusername/copilot-core/pkg/embeddings"
-	"github.com/yourusername/copilot-core/pkg/llm"
 	"github.com/yourusername/copilot-core/pkg/server"
 )
 
@@ -69,34 +70,36 @@ func main() {
 		log.Fatalf("Failed to create semantic search: %v", err)
 	}
 
-	// Initialize LLM client
-	log.Println("🤖 Initializing OpenAI GPT-4 client...")
-	llmClient := llm.NewClient()
-	if !llmClient.IsConfigured() {
-		log.Println("⚠️  Warning: LLM client not configured. Set OPENAI_API_KEY environment variable.")
-	} else {
-		log.Println("✅ LLM client configured successfully")
+	// Initialize cloud client
+	log.Println("☁️  Initializing cloud API client...")
+	cloudClient, err := cloud.NewCloudClient(cloud.CloudConfig{
+		// BaseURL and APIKey will be read from environment variables
+		// TESTCOPILOT_CLOUD_URL and TESTCOPILOT_API_KEY
+	})
+	if err != nil {
+		log.Fatalf("Failed to create cloud client: %v", err)
 	}
+	log.Println("✅ Cloud client configured successfully")
 
-	// Initialize context builder
-	log.Println("🧠 Initializing context builder...")
-	contextBuilder, err := llm.NewContextBuilder(llm.ContextBuilderConfig{
+	// Initialize context extractor
+	log.Println("🧠 Initializing context extractor...")
+	contextExtractor, err := pkgcontext.NewContextExtractor(pkgcontext.ContextExtractorConfig{
 		DB:             db,
 		SemanticSearch: semanticSearch,
 	})
 	if err != nil {
-		log.Fatalf("Failed to create context builder: %v", err)
+		log.Fatalf("Failed to create context extractor: %v", err)
 	}
 
 	// Create server
 	log.Printf("🌐 Creating HTTP/WebSocket server on port %d...\n", *port)
 	srv, err := server.NewServer(server.ServerConfig{
-		Port:           *port,
-		DB:             db,
-		VectorStore:    vectorStore,
-		SemanticSearch: semanticSearch,
-		LLMClient:      llmClient,
-		ContextBuilder: contextBuilder,
+		Port:             *port,
+		DB:               db,
+		VectorStore:      vectorStore,
+		SemanticSearch:   semanticSearch,
+		CloudClient:      cloudClient,
+		ContextExtractor: contextExtractor,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)

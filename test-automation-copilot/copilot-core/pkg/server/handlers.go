@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/yourusername/copilot-core/pkg/cloud"
 	"github.com/yourusername/copilot-core/pkg/database"
 	"github.com/yourusername/copilot-core/pkg/indexer"
 )
@@ -197,24 +198,34 @@ func (s *Server) generatePageObject(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Build prompt with context
-	completionReq, err := s.contextBuilder.BuildPageObjectPrompt(ctx, req.Spec, req.Elements)
+	// Convert elements to cloud.Element format
+	elements := make([]cloud.Element, len(req.Elements))
+	for i, elem := range req.Elements {
+		elements[i] = cloud.Element{
+			Name:         elem["name"],
+			LocatorType:  elem["locatorType"],
+			LocatorValue: elem["locatorValue"],
+		}
+	}
+
+	// Extract context (preprocessing)
+	payload, err := s.contextExtractor.ExtractPageObjectContext(ctx, req.Spec, elements)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Generate code
-	response, err := s.llmClient.Complete(ctx, completionReq)
+	// Send to cloud for AI processing
+	response, err := s.cloudClient.Generate(ctx, payload)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":        response.Content,
-		"tokensUsed":  response.TokensUsed,
-		"model":       response.Model,
+		"code":         response.Code,
+		"tokensUsed":   response.TokensUsed,
+		"model":        response.Model,
 		"finishReason": response.FinishReason,
 	})
 }
@@ -229,24 +240,24 @@ func (s *Server) generateTest(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Build prompt with context
-	completionReq, err := s.contextBuilder.BuildTestCasePrompt(ctx, req.Spec)
+	// Extract context (preprocessing)
+	payload, err := s.contextExtractor.ExtractTestContext(ctx, req.Spec)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Generate code
-	response, err := s.llmClient.Complete(ctx, completionReq)
+	// Send to cloud for AI processing
+	response, err := s.cloudClient.Generate(ctx, payload)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":        response.Content,
-		"tokensUsed":  response.TokensUsed,
-		"model":       response.Model,
+		"code":         response.Code,
+		"tokensUsed":   response.TokensUsed,
+		"model":        response.Model,
 		"finishReason": response.FinishReason,
 	})
 }
@@ -261,24 +272,24 @@ func (s *Server) fixCode(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Build prompt with context
-	completionReq, err := s.contextBuilder.BuildFixPrompt(ctx, req.Code, req.Error)
+	// Extract context (preprocessing)
+	payload, err := s.contextExtractor.ExtractFixContext(ctx, req.Code, req.Error, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Generate fix
-	response, err := s.llmClient.Complete(ctx, completionReq)
+	// Send to cloud for AI processing
+	response, err := s.cloudClient.Generate(ctx, payload)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"fix":         response.Content,
-		"tokensUsed":  response.TokensUsed,
-		"model":       response.Model,
+		"fix":          response.Code,
+		"tokensUsed":   response.TokensUsed,
+		"model":        response.Model,
 		"finishReason": response.FinishReason,
 	})
 }
@@ -293,24 +304,24 @@ func (s *Server) chatMessage(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Build prompt with context
-	completionReq, err := s.contextBuilder.BuildChatPrompt(ctx, req.Message)
+	// Extract context (preprocessing)
+	payload, err := s.contextExtractor.ExtractChatContext(ctx, req.Message)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Generate response
-	response, err := s.llmClient.Complete(ctx, completionReq)
+	// Send to cloud for AI processing
+	response, err := s.cloudClient.Generate(ctx, payload)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"response":    response.Content,
-		"tokensUsed":  response.TokensUsed,
-		"model":       response.Model,
+		"response":     response.Code,
+		"tokensUsed":   response.TokensUsed,
+		"model":        response.Model,
 		"finishReason": response.FinishReason,
 	})
 }

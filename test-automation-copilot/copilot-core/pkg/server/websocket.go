@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/yourusername/copilot-core/pkg/llm"
+	"github.com/yourusername/copilot-core/pkg/cloud"
 )
 
 // WebSocket message types
@@ -102,14 +102,23 @@ func (s *Server) handleWSRequest(conn *websocket.Conn, payload interface{}) {
 
 	ctx := context.Background()
 
-	// Build completion request based on action
-	var completionReq llm.CompletionRequest
+	// Extract context payload based on action
+	var contextPayload cloud.ContextPayload
 	var action string
 
 	switch req.Action {
 	case "pageobject":
 		action = "pageobject"
-		completionReq, err = s.contextBuilder.BuildPageObjectPrompt(ctx, req.Spec, req.Elements)
+		// Convert elements to cloud.Element format
+		elements := make([]cloud.Element, len(req.Elements))
+		for i, elem := range req.Elements {
+			elements[i] = cloud.Element{
+				Name:         elem["name"],
+				LocatorType:  elem["locatorType"],
+				LocatorValue: elem["locatorValue"],
+			}
+		}
+		contextPayload, err = s.contextExtractor.ExtractPageObjectContext(ctx, req.Spec, elements)
 		if err != nil {
 			s.sendWSError(conn, err.Error())
 			return
@@ -117,7 +126,7 @@ func (s *Server) handleWSRequest(conn *websocket.Conn, payload interface{}) {
 
 	case "test":
 		action = "test"
-		completionReq, err = s.contextBuilder.BuildTestCasePrompt(ctx, req.Spec)
+		contextPayload, err = s.contextExtractor.ExtractTestContext(ctx, req.Spec)
 		if err != nil {
 			s.sendWSError(conn, err.Error())
 			return
@@ -125,7 +134,7 @@ func (s *Server) handleWSRequest(conn *websocket.Conn, payload interface{}) {
 
 	case "chat":
 		action = "chat"
-		completionReq, err = s.contextBuilder.BuildChatPrompt(ctx, req.Message)
+		contextPayload, err = s.contextExtractor.ExtractChatContext(ctx, req.Message)
 		if err != nil {
 			s.sendWSError(conn, err.Error())
 			return
@@ -133,7 +142,7 @@ func (s *Server) handleWSRequest(conn *websocket.Conn, payload interface{}) {
 
 	case "fix":
 		action = "fix"
-		completionReq, err = s.contextBuilder.BuildFixPrompt(ctx, req.Code, req.Error)
+		contextPayload, err = s.contextExtractor.ExtractFixContext(ctx, req.Code, req.Error, "")
 		if err != nil {
 			s.sendWSError(conn, err.Error())
 			return
@@ -144,12 +153,12 @@ func (s *Server) handleWSRequest(conn *websocket.Conn, payload interface{}) {
 		return
 	}
 
-	// Stream completion with callback
+	// Stream from cloud with callback
 	callback := func(chunk string) error {
 		return s.sendWSChunk(conn, action, chunk)
 	}
 
-	response, err := s.llmClient.CompleteStream(ctx, completionReq, callback)
+	response, err := s.cloudClient.GenerateStream(ctx, contextPayload, callback)
 	if err != nil {
 		s.sendWSError(conn, err.Error())
 		return
@@ -173,12 +182,12 @@ func (s *Server) sendWSChunk(conn *websocket.Conn, action, chunk string) error {
 }
 
 // sendWSComplete sends a completion message
-func (s *Server) sendWSComplete(conn *websocket.Conn, action string, response *llm.CompletionResponse) error {
+func (s *Server) sendWSComplete(conn *websocket.Conn, action string, response *cloud.GenerationResult) error {
 	msg := WSMessage{
 		Type: MessageTypeComplete,
 		Payload: WSResponse{
 			Action:       action,
-			Content:      response.Content,
+			Content:      response.Code,
 			TokensUsed:   response.TokensUsed,
 			Model:        response.Model,
 			FinishReason: response.FinishReason,

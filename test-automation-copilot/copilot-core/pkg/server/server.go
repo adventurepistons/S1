@@ -9,31 +9,32 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/yourusername/copilot-core/pkg/cloud"
+	pkgcontext "github.com/yourusername/copilot-core/pkg/context"
 	"github.com/yourusername/copilot-core/pkg/database"
 	"github.com/yourusername/copilot-core/pkg/embeddings"
-	"github.com/yourusername/copilot-core/pkg/llm"
 )
 
 // Server represents the HTTP/WebSocket server
 type Server struct {
-	router         *gin.Engine
-	db             *database.DB
-	vectorStore    *embeddings.VectorStore
-	semanticSearch *embeddings.SemanticSearch
-	llmClient      *llm.Client
-	contextBuilder *llm.ContextBuilder
-	upgrader       websocket.Upgrader
-	port           int
+	router           *gin.Engine
+	db               *database.DB
+	vectorStore      *embeddings.VectorStore
+	semanticSearch   *embeddings.SemanticSearch
+	cloudClient      *cloud.CloudClient
+	contextExtractor *pkgcontext.ContextExtractor
+	upgrader         websocket.Upgrader
+	port             int
 }
 
 // ServerConfig configures the server
 type ServerConfig struct {
-	Port           int
-	DB             *database.DB
-	VectorStore    *embeddings.VectorStore
-	SemanticSearch *embeddings.SemanticSearch
-	LLMClient      *llm.Client
-	ContextBuilder *llm.ContextBuilder
+	Port             int
+	DB               *database.DB
+	VectorStore      *embeddings.VectorStore
+	SemanticSearch   *embeddings.SemanticSearch
+	CloudClient      *cloud.CloudClient
+	ContextExtractor *pkgcontext.ContextExtractor
 }
 
 // NewServer creates a new server
@@ -44,11 +45,11 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if config.SemanticSearch == nil {
 		return nil, fmt.Errorf("semantic search is required")
 	}
-	if config.LLMClient == nil {
-		return nil, fmt.Errorf("LLM client is required")
+	if config.CloudClient == nil {
+		return nil, fmt.Errorf("cloud client is required")
 	}
-	if config.ContextBuilder == nil {
-		return nil, fmt.Errorf("context builder is required")
+	if config.ContextExtractor == nil {
+		return nil, fmt.Errorf("context extractor is required")
 	}
 
 	port := config.Port
@@ -60,13 +61,13 @@ func NewServer(config ServerConfig) (*Server, error) {
 	gin.SetMode(gin.ReleaseMode)
 
 	s := &Server{
-		router:         gin.Default(),
-		db:             config.DB,
-		vectorStore:    config.VectorStore,
-		semanticSearch: config.SemanticSearch,
-		llmClient:      config.LLMClient,
-		contextBuilder: config.ContextBuilder,
-		port:           port,
+		router:           gin.Default(),
+		db:               config.DB,
+		vectorStore:      config.VectorStore,
+		semanticSearch:   config.SemanticSearch,
+		cloudClient:      config.CloudClient,
+		contextExtractor: config.ContextExtractor,
+		port:             port,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Allow all origins for development
@@ -156,13 +157,20 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 // healthCheck returns server health status
 func (s *Server) healthCheck(c *gin.Context) {
+	// Check cloud API health
+	cloudHealthy := false
+	ctx := c.Request.Context()
+	if err := s.cloudClient.CheckHealth(ctx); err == nil {
+		cloudHealthy = true
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "healthy",
 		"timestamp": time.Now().Unix(),
 		"services": gin.H{
 			"database":    s.db != nil,
 			"vectorStore": s.vectorStore != nil,
-			"llm":         s.llmClient.IsConfigured(),
+			"cloudAPI":    cloudHealthy,
 		},
 	})
 }
