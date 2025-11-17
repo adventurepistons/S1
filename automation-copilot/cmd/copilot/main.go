@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/adventurepistons/automation-copilot/internal/ai"
 	"github.com/adventurepistons/automation-copilot/internal/detector"
 	"github.com/adventurepistons/automation-copilot/internal/graph"
 	"github.com/adventurepistons/automation-copilot/internal/parser"
@@ -25,6 +26,11 @@ func main() {
 		fmt.Println("  detect <project-dir>  - Detect framework and coding patterns")
 		fmt.Println("  build-graph           - Build knowledge graph from indexed data")
 		fmt.Println("  ask <question>        - Ask a question about the codebase")
+		fmt.Println()
+		fmt.Println("AI-Powered Code Generation:")
+		fmt.Println("  build-index           - Build AI indexes (chunks, BM25, embeddings)")
+		fmt.Println("  generate <request>    - Generate code using AI (requires LLM)")
+		fmt.Println("  stats                 - Show Context Builder statistics")
 		os.Exit(1)
 	}
 
@@ -65,6 +71,20 @@ func main() {
 		// Join all remaining args as the question
 		question := strings.Join(os.Args[2:], " ")
 		askQuestion(question)
+
+	case "build-index":
+		buildAIIndex()
+
+	case "generate":
+		if len(os.Args) < 3 {
+			log.Fatal("Usage: copilot generate <request>")
+		}
+		// Join all remaining args as the request
+		request := strings.Join(os.Args[2:], " ")
+		generateCode(request)
+
+	case "stats":
+		showStats()
 
 	default:
 		log.Fatalf("Unknown command: %s", command)
@@ -383,4 +403,178 @@ func askQuestion(question string) {
 	}
 
 	fmt.Printf("✓ %s\n", result.Message)
+}
+
+// buildAIIndex builds all AI indexes (chunks, BM25, embeddings, examples)
+func buildAIIndex() {
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("🤖 Building AI Indexes for Code Generation")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println()
+
+	// Initialize database
+	db, err := storage.NewDatabase("copilot.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	// Create context builder with default config
+	config := ai.DefaultConfig()
+	contextBuilder, err := ai.NewContextBuilder(db.GetDB(), config)
+	if err != nil {
+		log.Fatalf("Failed to create context builder: %v", err)
+	}
+
+	// Build all indexes
+	if err := contextBuilder.BuildIndexes(); err != nil {
+		log.Fatalf("Failed to build indexes: %v", err)
+	}
+
+	fmt.Println()
+	fmt.Println("🎉 All indexes built successfully!")
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Println("  1. Start embedding service: make start-embeddings")
+	fmt.Println("  2. Generate code: copilot generate \"create test for login\"")
+	fmt.Println()
+}
+
+// generateCode generates code using AI
+func generateCode(request string) {
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("🤖 AI-Powered Code Generation")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println()
+
+	// Initialize database
+	db, err := storage.NewDatabase("copilot.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	// Create context builder
+	config := ai.DefaultConfig()
+	contextBuilder, err := ai.NewContextBuilder(db.GetDB(), config)
+	if err != nil {
+		log.Fatalf("Failed to create context builder: %v", err)
+	}
+
+	// Build context for the request
+	prompt, metrics, err := contextBuilder.BuildContext(request)
+	if err != nil {
+		log.Fatalf("Failed to build context: %v", err)
+	}
+
+	// Display prompt and metrics
+	fmt.Println()
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("📋 Generated Prompt for LLM")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println()
+
+	fmt.Println("SYSTEM PROMPT (CACHED):")
+	fmt.Println(strings.Repeat("-", 60))
+	fmt.Println(prompt.SystemPrompt)
+	fmt.Println()
+
+	fmt.Println("USER PROMPT (DYNAMIC):")
+	fmt.Println(strings.Repeat("-", 60))
+	fmt.Println(prompt.UserPrompt)
+	fmt.Println()
+
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("📊 Metrics")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Printf("  Retrieval Time:        %v\n", metrics.RetrievalLatency)
+	fmt.Printf("  Example Selection:     %v\n", metrics.ExampleSelectionTime)
+	fmt.Printf("  Retrieved Chunks:      %d\n", metrics.HybridResultCount)
+	fmt.Printf("  Average Relevance:     %.2f\n", metrics.AverageRelevanceScore)
+	fmt.Printf("  Total Tokens:          %d\n", metrics.TotalTokens)
+	fmt.Printf("  Cached Tokens:         %d (%.1f%%)\n",
+		metrics.CachedTokens,
+		float64(metrics.CachedTokens)/float64(metrics.TotalTokens)*100)
+	fmt.Printf("  Dynamic Tokens:        %d\n", metrics.DynamicTokens)
+	fmt.Printf("  Estimated Cost:        $%.4f\n", metrics.EstimatedCost)
+	fmt.Println()
+
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("💡 Next Steps")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println()
+	fmt.Println("The prompt above is ready to send to an LLM!")
+	fmt.Println()
+	fmt.Println("Options:")
+	fmt.Println("  1. Copy the prompt and paste into Claude.ai or ChatGPT")
+	fmt.Println("  2. Use the Claude API (see documentation)")
+	fmt.Println("  3. Use the OpenAI API (see documentation)")
+	fmt.Println()
+	fmt.Println("The LLM will generate code matching your project's exact style.")
+	fmt.Println()
+}
+
+// showStats shows Context Builder statistics
+func showStats() {
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("📊 Context Builder Statistics")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println()
+
+	// Initialize database
+	db, err := storage.NewDatabase("copilot.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	// Create context builder
+	config := ai.DefaultConfig()
+	contextBuilder, err := ai.NewContextBuilder(db.GetDB(), config)
+	if err != nil {
+		log.Fatalf("Failed to create context builder: %v", err)
+	}
+
+	// Get statistics
+	stats, err := contextBuilder.GetStats()
+	if err != nil {
+		log.Fatalf("Failed to get statistics: %v", err)
+	}
+
+	// Display stats
+	jsonData, err := json.MarshalIndent(stats, "", "  ")
+	if err != nil {
+		log.Fatalf("Failed to marshal JSON: %v", err)
+	}
+
+	fmt.Println(string(jsonData))
+	fmt.Println()
+
+	// Summary
+	if hybridStats, ok := stats["hybrid_retrieval"].(map[string]interface{}); ok {
+		if bm25Stats, ok := hybridStats["bm25"].(map[string]interface{}); ok {
+			fmt.Println("BM25 Index:")
+			fmt.Printf("  Documents: %v\n", bm25Stats["total_documents"])
+			fmt.Printf("  Terms:     %v\n", bm25Stats["total_terms"])
+			fmt.Println()
+		}
+
+		if semanticStats, ok := hybridStats["semantic"].(map[string]interface{}); ok {
+			fmt.Println("Semantic Index:")
+			fmt.Printf("  Chunks:    %v\n", semanticStats["total_chunks"])
+			fmt.Printf("  Embedded:  %v\n", semanticStats["with_embeddings"])
+			fmt.Printf("  Coverage:  %.1f%%\n", semanticStats["coverage"])
+			fmt.Println()
+		}
+	}
+
+	if exampleStats, ok := stats["examples"].(map[string]interface{}); ok {
+		fmt.Println("Pattern Examples:")
+		fmt.Printf("  Total:     %v\n", exampleStats["total_examples"])
+		fmt.Printf("  Positive:  %v\n", exampleStats["positive_examples"])
+		fmt.Printf("  Negative:  %v\n", exampleStats["negative_examples"])
+		fmt.Println()
+	}
+
+	fmt.Println("════════════════════════════════════════════════════════")
 }
