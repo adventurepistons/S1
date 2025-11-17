@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/adventurepistons/automation-copilot/internal/detector"
+	"github.com/adventurepistons/automation-copilot/internal/graph"
 	"github.com/adventurepistons/automation-copilot/internal/parser"
 	"github.com/adventurepistons/automation-copilot/internal/storage"
 )
@@ -22,6 +23,8 @@ func main() {
 		fmt.Println("  index <file.java>     - Parse and save to database")
 		fmt.Println("  query <class-name>    - Query database for class info")
 		fmt.Println("  detect <project-dir>  - Detect framework and coding patterns")
+		fmt.Println("  build-graph           - Build knowledge graph from indexed data")
+		fmt.Println("  ask <question>        - Ask a question about the codebase")
 		os.Exit(1)
 	}
 
@@ -51,6 +54,17 @@ func main() {
 			log.Fatal("Usage: copilot detect <project-dir>")
 		}
 		detectProject(os.Args[2])
+
+	case "build-graph":
+		buildGraph()
+
+	case "ask":
+		if len(os.Args) < 3 {
+			log.Fatal("Usage: copilot ask <question>")
+		}
+		// Join all remaining args as the question
+		question := strings.Join(os.Args[2:], " ")
+		askQuestion(question)
 
 	default:
 		log.Fatalf("Unknown command: %s", command)
@@ -306,4 +320,67 @@ func detectProject(projectDir string) {
 
 	fmt.Println("\n" + strings.Repeat("=", 80))
 	fmt.Println("✓ Detection complete! Results saved to database.")
+}
+
+// buildGraph builds the knowledge graph from indexed data
+func buildGraph() {
+	fmt.Println("Building Knowledge Graph...")
+	fmt.Println(strings.Repeat("=", 80))
+
+	// Initialize database
+	db, err := storage.NewDatabase("copilot.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	// Create knowledge graph
+	kg := graph.NewKnowledgeGraph(db.GetDB())
+
+	// Build the graph
+	if err := kg.BuildGraph(); err != nil {
+		log.Fatalf("Failed to build knowledge graph: %v", err)
+	}
+
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println("✓ Knowledge graph built successfully!")
+	fmt.Println("\nYou can now use 'copilot ask <question>' to query the codebase.")
+}
+
+// askQuestion asks a natural language question about the codebase
+func askQuestion(question string) {
+	// Initialize database
+	db, err := storage.NewDatabase("copilot.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	// Create knowledge graph and query engine
+	kg := graph.NewKnowledgeGraph(db.GetDB())
+	qe := graph.NewQueryEngine(kg)
+
+	// Execute query
+	fmt.Printf("Question: %s\n", question)
+	fmt.Println(strings.Repeat("=", 80))
+
+	result, err := qe.Execute(question)
+	if err != nil {
+		log.Fatalf("Query failed: %v", err)
+	}
+
+	if !result.Success {
+		fmt.Printf("❌ %s\n", result.Message)
+		fmt.Println("\nSupported queries:")
+		fmt.Println("  - Where is <element>?")
+		fmt.Println("  - What tests use <page>?")
+		fmt.Println("  - Elements in <page>")
+		fmt.Println("  - Who uses <field>?")
+		fmt.Println("  - Methods in <class>")
+		fmt.Println("  - List all page objects")
+		fmt.Println("  - Show all tests")
+		return
+	}
+
+	fmt.Printf("✓ %s\n", result.Message)
 }

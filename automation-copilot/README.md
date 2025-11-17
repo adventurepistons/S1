@@ -137,7 +137,7 @@ Complete CRUD operations:
 
 ### 5. CLI Tool (`cmd/copilot/main.go`)
 
-Four commands:
+Six commands:
 
 **parse** - Parse and display extracted data:
 ```bash
@@ -157,6 +157,18 @@ Four commands:
 **detect** - Detect framework and coding patterns:
 ```bash
 ./copilot detect test_samples/
+```
+
+**build-graph** - Build knowledge graph from indexed data:
+```bash
+./copilot build-graph
+```
+
+**ask** - Ask natural language questions:
+```bash
+./copilot ask "where is usernameField"
+./copilot ask "what tests use LoginPage"
+./copilot ask "elements in LoginPage"
 ```
 
 ### 6. Framework Detector (`internal/detector/`)
@@ -202,7 +214,66 @@ Assertions:
   Uses Messages:     true
 ```
 
-### 7. Test Samples (`test_samples/`)
+### 7. Knowledge Graph (`internal/graph/`)
+
+**Knowledge Graph Builder** - Connects all entities with relationships:
+- **EXTENDS** - Class inheritance (LoginPage extends BasePage)
+- **IMPLEMENTS** - Interface implementation
+- **CALLS** - Method call graph (testLogin calls loginPage.login)
+- **USES** - Field usage (which methods use which WebElements)
+- **TEST_USES_PAGE** - Test to page object relationships
+
+**Query Engine** - Natural language queries:
+```bash
+# Find where an element is defined
+./copilot ask "where is usernameField"
+
+# Find tests using a page object
+./copilot ask "what tests use LoginPage"
+
+# Find all elements in a page
+./copilot ask "elements in LoginPage"
+
+# Find who uses a field
+./copilot ask "who uses passwordField"
+
+# List all page objects
+./copilot ask "list all page objects"
+
+# Show all tests
+./copilot ask "show all tests"
+```
+
+**Example Queries:**
+```
+Question: where is usernameField
+================================================================================
+✓ Element 'usernameField' found:
+  File: test_samples/LoginPage.java:18
+  Class: LoginPage
+  Locator: id = "username"
+
+Question: what tests use LoginPage
+================================================================================
+✓ Found 1 test(s) using 'LoginPage':
+  - LoginTest (test_samples/LoginTest.java)
+
+Question: elements in LoginPage
+================================================================================
+✓ Found 5 WebElement(s) in 'LoginPage':
+  Line 18: usernameField (id = "username")
+  Line 21: passwordField (id = "password")
+  Line 24: loginButton (css = "button[type='submit']")
+  Line 27: errorMessage (xpath = "//div[@class='error-message']")
+  Line 30: rememberMeCheckbox (name = "remember-me")
+```
+
+**Call Graph Resolution:**
+- Resolves method calls to actual method definitions
+- Traces complete call chains from tests → page objects → elements
+- Understands field types to resolve calls on page object instances
+
+### 8. Test Samples (`test_samples/`)
 
 **LoginPage.java** - Page Object example with:
 - 5 @FindBy WebElements (id, css, xpath, name selectors)
@@ -323,17 +394,19 @@ CREATE TABLE relationships (
 automation-copilot/
 ├── cmd/
 │   └── copilot/
-│       └── main.go                      # CLI entry point (300+ lines)
+│       └── main.go                      # CLI entry point (400+ lines)
 ├── internal/
 │   ├── parser/
 │   │   └── java_parser.go               # Tree-sitter AST parser (700+ lines)
 │   ├── detector/
 │   │   ├── framework_detector.go        # Framework detection (400+ lines)
 │   │   └── pattern_detector.go          # Pattern learning (500+ lines)
-│   ├── storage/
-│   │   ├── database.go                  # SQLite operations (500+ lines)
-│   │   └── schema.sql                   # 25+ tables
-│   └── graph/                           # (Future: knowledge graph)
+│   ├── graph/
+│   │   ├── knowledge_graph.go           # Graph builder (500+ lines)
+│   │   └── query_engine.go              # Natural language queries (400+ lines)
+│   └── storage/
+│       ├── database.go                  # SQLite operations (500+ lines)
+│       └── schema.sql                   # 25+ tables
 ├── pkg/
 │   └── models/
 │       ├── class_data.go                # Complete data models
@@ -349,24 +422,24 @@ automation-copilot/
 
 ## Implementation Status
 
-### ✅ Completed (Phase 1a + 1b)
+### ✅ Completed (Phase 1 + 2)
 
-**Core Understanding Engine:**
+**Core Understanding Engine (Phase 1a):**
 - [x] Complete data models (ClassData, Field, Method, Annotation)
 - [x] Tree-sitter Java parser with 100% extraction
 - [x] SQLite schema with 25+ tables
 - [x] Database layer with save/query operations
-- [x] CLI tool with parse/index/query/detect commands
+- [x] CLI tool with parse/index/query commands
 - [x] Test samples (LoginPage, LoginTest, pom.xml, testng.xml)
 
-**Framework Detection:**
+**Framework Detection (Phase 1b):**
 - [x] Framework detector for 6 combinations
 - [x] POM.xml parser for dependency detection
 - [x] Import analyzer for framework identification
 - [x] File structure scanner (testng.xml, .feature files)
 - [x] Architecture pattern detection (POM, PageFactory, Screenplay)
 
-**Pattern Learning:**
+**Pattern Learning (Phase 1b):**
 - [x] Naming convention detection (tests, page objects, WebElements)
 - [x] Test structure detection (AAA vs Given-When-Then)
 - [x] Wait strategy analysis (explicit/implicit, timeouts)
@@ -374,7 +447,15 @@ automation-copilot/
 - [x] Data pattern detection (DataProviders, CSV, Excel)
 - [x] Pattern example extraction for code generation
 
-### 📋 Next Steps (Phase 2)
+**Knowledge Graph (Phase 2):**
+- [x] Relationship builder (EXTENDS, IMPLEMENTS, CALLS, USES, TEST_USES_PAGE)
+- [x] Call graph resolver - resolves method calls to actual methods
+- [x] Field usage tracker - knows which methods use which WebElements
+- [x] Natural language query engine with pattern matching
+- [x] Support for 10+ query types (where/what/who/list/show)
+- [x] CLI commands (build-graph, ask)
+
+### 📋 Next Steps (Phase 3 - AI Integration)
 
 1. **Build & Test** (pending dependency resolution)
    ```bash
@@ -388,16 +469,11 @@ automation-copilot/
    ./copilot index test_samples/LoginPage.java
    ./copilot index test_samples/LoginTest.java
    ./copilot detect test_samples/
-   ./copilot query LoginPage
+   ./copilot build-graph
+   ./copilot ask "where is usernameField"
    ```
 
-2. **Add Knowledge Graph** (`internal/graph/`)
-   - Build relationship graph (EXTENDS, CALLS, USES)
-   - Implement call graph resolution
-   - Create query engine with pattern matching
-   - Add graph traversal methods
-
-3. **Add Context Builder** (`internal/ai/`)
+2. **Add Context Builder** (`internal/ai/`)
    - Assemble complete context from knowledge graph
    - Build prompts for LLM with patterns
    - Integrate OpenAI/Claude APIs
