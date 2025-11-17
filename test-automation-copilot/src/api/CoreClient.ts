@@ -423,7 +423,7 @@ export class CoreClient {
     }
 
     /**
-     * Generate code from recorded session (legacy compatibility)
+     * Generate code from recorded session
      */
     public async generateFromSession(session: RecordingSession, framework: string = 'selenium-java'): Promise<any[]> {
         const generatedFiles: any[] = [];
@@ -431,6 +431,8 @@ export class CoreClient {
         // Generate page objects for each page
         for (const page of session.pages) {
             try {
+                const pageName = this.getPageObjectName(page.title || page.url);
+
                 const result = await this.generatePageObject(
                     `Page object for ${page.title || page.url}`,
                     page.elements.map(elem => ({
@@ -442,8 +444,9 @@ export class CoreClient {
 
                 generatedFiles.push({
                     type: 'pageObject',
-                    name: this.getPageObjectName(page.title || page.url),
-                    code: result.code
+                    name: pageName,
+                    filePath: `src/test/java/pages/${pageName}.java`,
+                    content: result.code
                 });
             } catch (error) {
                 console.error(`Failed to generate page object for ${page.url}:`, error);

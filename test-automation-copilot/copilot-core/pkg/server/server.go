@@ -127,6 +127,16 @@ func (s *Server) setupRoutes() {
 			db.GET("/classes/:id", s.getClass)
 			db.GET("/methods/:classId", s.getMethodsByClass)
 		}
+
+		// Recording sessions
+		recordings := v1.Group("/recordings")
+		{
+			recordings.POST("/save", s.saveRecordingSession)
+			recordings.GET("/:id", s.getRecordingSession)
+			recordings.POST("/list", s.getRecordingSessions)
+			recordings.DELETE("/:id", s.deleteRecordingSession)
+			recordings.GET("/stats", s.getRecordingStats)
+		}
 	}
 
 	// WebSocket endpoint for streaming

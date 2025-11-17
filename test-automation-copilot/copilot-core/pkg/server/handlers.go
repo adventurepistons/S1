@@ -386,3 +386,107 @@ func (s *Server) getMethodsByClass(c *gin.Context) {
 		"count":   len(methods),
 	})
 }
+
+// ===== Recording Session Handlers =====
+
+// SaveRecordingRequest represents a request to save a recording session
+type SaveRecordingRequest struct {
+	Session *database.RecordingSession `json:"session" binding:"required"`
+}
+
+// GetRecordingRequest represents a request to get recording sessions
+type GetRecordingRequest struct {
+	WorkspacePath string `json:"workspacePath"`
+	Limit         int    `json:"limit"`
+}
+
+// saveRecordingSession saves a recording session
+func (s *Server) saveRecordingSession(c *gin.Context) {
+	var req SaveRecordingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.db.SaveRecordingSession(req.Session); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Recording session saved successfully",
+		"sessionId":  req.Session.ID,
+		"pageCount":  req.Session.PagesCaptured,
+		"elementCount": req.Session.ElementsCaptured,
+	})
+}
+
+// getRecordingSession retrieves a specific recording session
+func (s *Server) getRecordingSession(c *gin.Context) {
+	sessionID := c.Param("id")
+
+	session, err := s.db.GetRecordingSession(sessionID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"session": session,
+	})
+}
+
+// getRecordingSessions retrieves recording sessions for a workspace
+func (s *Server) getRecordingSessions(c *gin.Context) {
+	var req GetRecordingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Limit == 0 {
+		req.Limit = 10
+	}
+
+	sessions, err := s.db.GetRecordingSessionsByWorkspace(req.WorkspacePath, req.Limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"sessions": sessions,
+		"count":    len(sessions),
+	})
+}
+
+// deleteRecordingSession deletes a recording session
+func (s *Server) deleteRecordingSession(c *gin.Context) {
+	sessionID := c.Param("id")
+
+	if err := s.db.DeleteRecordingSession(sessionID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Recording session deleted successfully",
+	})
+}
+
+// getRecordingStats returns statistics about recording sessions
+func (s *Server) getRecordingStats(c *gin.Context) {
+	workspacePath := c.Query("workspacePath")
+	if workspacePath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "workspacePath is required"})
+		return
+	}
+
+	stats, err := s.db.RecordingSessionStats(workspacePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
