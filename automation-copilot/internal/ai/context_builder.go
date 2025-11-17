@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -18,6 +19,8 @@ type ContextBuilder struct {
 	conversationManager *ConversationManager
 	promptAssembler     *PromptAssembler
 	embeddingClient     *EmbeddingClient
+	llmClient           LLMClient      // LLM client (Claude/OpenAI)
+	responseParser      *ResponseParser // Parses LLM responses
 }
 
 // NewContextBuilder creates a new context builder
@@ -36,6 +39,17 @@ func NewContextBuilder(db *sql.DB, config Config) (*ContextBuilder, error) {
 		return nil, fmt.Errorf("failed to create prompt assembler: %w", err)
 	}
 
+	// Initialize LLM client (optional - only if API key provided)
+	var llmClient LLMClient
+	if config.LLMConfig.APIKey != "" {
+		llmClient, err = NewLLMClient(config.LLMConfig)
+		if err != nil {
+			// Don't fail - just warn that LLM integration won't work
+			fmt.Printf("⚠️  Warning: Failed to initialize LLM client: %v\n", err)
+			fmt.Println("   Context building will work, but code generation requires LLM API key")
+		}
+	}
+
 	return &ContextBuilder{
 		db:                  db,
 		config:              config,
@@ -46,6 +60,8 @@ func NewContextBuilder(db *sql.DB, config Config) (*ContextBuilder, error) {
 		conversationManager: NewConversationManager(db, config),
 		promptAssembler:     promptAssembler,
 		embeddingClient:     embeddingClient,
+		llmClient:           llmClient,
+		responseParser:      NewResponseParser(),
 	}, nil
 }
 
@@ -175,6 +191,113 @@ func (cb *ContextBuilder) SaveResponse(response string, generatedCode *Generated
 // GetConversationManager returns the conversation manager
 func (cb *ContextBuilder) GetConversationManager() *ConversationManager {
 	return cb.conversationManager
+}
+
+// GenerateCode is the COMPLETE end-to-end code generation method
+// Builds context, calls LLM, parses response, saves to conversation
+func (cb *ContextBuilder) GenerateCode(ctx context.Context, userRequest string) (*CodeGenerationResult, error) {
+	result := &CodeGenerationResult{}
+	startTime := time.Now()
+
+	// Check if LLM client is available
+	if cb.llmClient == nil {
+		return nil, fmt.Errorf("LLM client not initialized - please set ANTHROPIC_API_KEY environment variable")
+	}
+
+	// Step 1: Build context (uses all RAG components)
+	fmt.Println("")
+	prompt, metrics, err := cb.BuildContext(userRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build context: %w", err)
+	}
+
+	result.ContextMetrics = metrics
+
+	// Step 2: Call LLM
+	fmt.Println("")
+	fmt.Println("🤖 Calling Claude API...")
+	fmt.Printf("   Model: %s\n", cb.config.LLMConfig.Model)
+	fmt.Printf("   Max tokens: %d\n", cb.config.LLMConfig.MaxTokens)
+
+	llmStart := time.Now()
+
+	llmRequest := &GenerateRequest{
+		SystemPrompt:     prompt.SystemPrompt,
+		UserPrompt:       prompt.UserPrompt,
+		CacheBreakpoints: prompt.CacheBreakpoints,
+		MaxTokens:        cb.config.LLMConfig.MaxTokens,
+		Temperature:      cb.config.LLMConfig.Temperature,
+		Model:            cb.config.LLMConfig.Model,
+	}
+
+	llmResponse, err := cb.llmClient.Generate(ctx, llmRequest)
+	if err != nil {
+		return nil, fmt.Errorf("LLM API call failed: %w", err)
+	}
+
+	fmt.Printf("   ✓ Response received in %v\n", llmResponse.Latency)
+	fmt.Printf("   ✓ Tokens: %d input (%d cached), %d output\n",
+		llmResponse.InputTokens, llmResponse.CacheReadTokens, llmResponse.OutputTokens)
+	fmt.Printf("   ✓ Actual cost: $%.4f\n", llmResponse.Cost)
+
+	result.LLMResponse = llmResponse
+
+	// Step 3: Parse response
+	fmt.Println("")
+	fmt.Println("📝 Parsing response...")
+
+	parsed, err := cb.responseParser.ParseResponse(llmResponse.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	fmt.Printf("   ✓ Extracted code: %s (%s)\n", parsed.GeneratedCode.ClassName, parsed.GeneratedCode.CodeType)
+	fmt.Printf("   ✓ Suggested path: %s\n", parsed.GeneratedCode.SuggestedPath)
+
+	result.ParsedResponse = parsed
+
+	// Step 4: Validate code
+	fmt.Println("")
+	fmt.Println("✅ Validating code...")
+
+	validationErrors := cb.responseParser.ValidateCode(parsed.GeneratedCode)
+	result.ValidationErrors = validationErrors
+
+	if len(validationErrors) > 0 {
+		for _, verr := range validationErrors {
+			icon := "⚠️"
+			if verr.Severity == "error" {
+				icon = "❌"
+			}
+			fmt.Printf("   %s %s: %s", icon, verr.Severity, verr.Message)
+			if verr.Line > 0 {
+				fmt.Printf(" (line %d)", verr.Line)
+			}
+			fmt.Println()
+		}
+	} else {
+		fmt.Println("   ✓ No validation issues found")
+	}
+
+	// Step 5: Save to conversation
+	if err := cb.SaveResponse(llmResponse.Content, parsed.GeneratedCode); err != nil {
+		fmt.Printf("   ⚠️  Warning: Failed to save to conversation: %v\n", err)
+	}
+
+	result.TotalTime = time.Since(startTime)
+
+	fmt.Println("")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Printf("✅ Code generation complete in %v\n", result.TotalTime)
+	fmt.Println("════════════════════════════════════════════════════════")
+
+	return result, nil
+}
+
+// GenerateCodePromptOnly builds context but doesn't call LLM
+// Useful for debugging or manual LLM use
+func (cb *ContextBuilder) GenerateCodePromptOnly(userRequest string) (*AssembledPrompt, *ContextBuilderMetrics, error) {
+	return cb.BuildContext(userRequest)
 }
 
 // BuildIndexes builds all indexes (chunks, BM25, embeddings, examples)

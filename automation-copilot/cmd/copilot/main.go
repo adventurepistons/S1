@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -29,7 +30,8 @@ func main() {
 		fmt.Println()
 		fmt.Println("AI-Powered Code Generation:")
 		fmt.Println("  build-index           - Build AI indexes (chunks, BM25, embeddings)")
-		fmt.Println("  generate <request>    - Generate code using AI (requires LLM)")
+		fmt.Println("  generate <request>    - Generate code using AI (requires ANTHROPIC_API_KEY)")
+		fmt.Println("  chat                  - Interactive chat mode for multi-turn conversations")
 		fmt.Println("  stats                 - Show Context Builder statistics")
 		os.Exit(1)
 	}
@@ -85,6 +87,9 @@ func main() {
 
 	case "stats":
 		showStats()
+
+	case "chat":
+		interactiveChat()
 
 	default:
 		log.Fatalf("Unknown command: %s", command)
@@ -454,15 +459,115 @@ func generateCode(request string) {
 	}
 	defer db.Close()
 
-	// Create context builder
+	// Create context builder with API key from environment
 	config := ai.DefaultConfig()
+	config.LLMConfig.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+
 	contextBuilder, err := ai.NewContextBuilder(db.GetDB(), config)
 	if err != nil {
 		log.Fatalf("Failed to create context builder: %v", err)
 	}
 
-	// Build context for the request
-	prompt, metrics, err := contextBuilder.BuildContext(request)
+	// Check if API key is available
+	apiKeyAvailable := config.LLMConfig.APIKey != ""
+
+	if apiKeyAvailable {
+		// FULL GENERATION: Build context + call LLM + parse response
+		fmt.Println("✅ ANTHROPIC_API_KEY found - generating code with Claude API")
+		generateCodeWithLLM(contextBuilder, request)
+	} else {
+		// PROMPT ONLY: Just build context (original behavior)
+		fmt.Println("ℹ️  ANTHROPIC_API_KEY not set - building prompt only")
+		fmt.Println("   Set ANTHROPIC_API_KEY to enable automatic code generation")
+		fmt.Println()
+		generatePromptOnly(contextBuilder, request)
+	}
+}
+
+// generateCodeWithLLM performs full end-to-end code generation
+func generateCodeWithLLM(contextBuilder *ai.ContextBuilder, request string) {
+	ctx := context.Background()
+
+	// Generate code
+	result, err := contextBuilder.GenerateCode(ctx, request)
+	if err != nil {
+		log.Fatalf("Failed to generate code: %v", err)
+	}
+
+	// Display generated code
+	fmt.Println()
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("📄 Generated Code")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println()
+
+	fmt.Printf("Class: %s\n", result.ParsedResponse.GeneratedCode.ClassName)
+	fmt.Printf("Type: %s\n", result.ParsedResponse.GeneratedCode.CodeType)
+	fmt.Printf("Package: %s\n", result.ParsedResponse.GeneratedCode.PackageName)
+	fmt.Println()
+
+	fmt.Println(result.ParsedResponse.GeneratedCode.Code)
+	fmt.Println()
+
+	// Display validation warnings
+	if len(result.ValidationErrors) > 0 {
+		fmt.Println("════════════════════════════════════════════════════════")
+		fmt.Println("⚠️  Validation Warnings")
+		fmt.Println("════════════════════════════════════════════════════════")
+		fmt.Println()
+		for _, verr := range result.ValidationErrors {
+			fmt.Printf("  [%s] %s\n", verr.Severity, verr.Message)
+		}
+		fmt.Println()
+	}
+
+	// Display final metrics
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("📊 Generation Metrics")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Printf("  Total Time:            %v\n", result.TotalTime)
+	fmt.Printf("  Context Building:      %v\n", result.ContextMetrics.RetrievalLatency+result.ContextMetrics.ExampleSelectionTime)
+	fmt.Printf("  LLM Latency:           %v\n", result.LLMResponse.Latency)
+	fmt.Printf("  Retrieved Chunks:      %d (avg relevance: %.2f)\n",
+		result.ContextMetrics.HybridResultCount,
+		result.ContextMetrics.AverageRelevanceScore)
+	fmt.Printf("  Input Tokens:          %d (%d cached)\n",
+		result.LLMResponse.InputTokens, result.LLMResponse.CacheReadTokens)
+	fmt.Printf("  Output Tokens:         %d\n", result.LLMResponse.OutputTokens)
+	fmt.Printf("  Actual Cost:           $%.4f\n", result.LLMResponse.Cost)
+	fmt.Println()
+
+	// Offer to save
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("💾 Save Code")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println()
+	fmt.Printf("Suggested path: %s\n", result.ParsedResponse.GeneratedCode.SuggestedPath)
+	fmt.Println()
+	fmt.Print("Save to file? (y/n): ")
+
+	var response string
+	fmt.Scanln(&response)
+
+	if strings.ToLower(response) == "y" || strings.ToLower(response) == "yes" {
+		// Save code
+		codeWriter := ai.NewCodeWriter(".")
+		writeResult, err := codeWriter.WriteCodeInteractive(result.ParsedResponse.GeneratedCode)
+		if err != nil {
+			fmt.Printf("❌ Failed to write code: %v\n", err)
+		} else {
+			fmt.Printf("✅ Code saved to: %s\n", writeResult.FilePath)
+		}
+	} else {
+		fmt.Println("ℹ️  Code not saved. Copy from output above.")
+	}
+
+	fmt.Println()
+}
+
+// generatePromptOnly builds context without calling LLM
+func generatePromptOnly(contextBuilder *ai.ContextBuilder, request string) {
+	prompt, metrics, err := contextBuilder.GenerateCodePromptOnly(request)
 	if err != nil {
 		log.Fatalf("Failed to build context: %v", err)
 	}
@@ -507,8 +612,7 @@ func generateCode(request string) {
 	fmt.Println()
 	fmt.Println("Options:")
 	fmt.Println("  1. Copy the prompt and paste into Claude.ai or ChatGPT")
-	fmt.Println("  2. Use the Claude API (see documentation)")
-	fmt.Println("  3. Use the OpenAI API (see documentation)")
+	fmt.Println("  2. Set ANTHROPIC_API_KEY and run again for automatic generation")
 	fmt.Println()
 	fmt.Println("The LLM will generate code matching your project's exact style.")
 	fmt.Println()
@@ -577,4 +681,132 @@ func showStats() {
 	}
 
 	fmt.Println("════════════════════════════════════════════════════════")
+}
+
+// interactiveChat provides an interactive chat interface for multi-turn code generation
+func interactiveChat() {
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println("💬 Interactive Chat Mode")
+	fmt.Println("════════════════════════════════════════════════════════")
+	fmt.Println()
+	fmt.Println("This mode allows multi-turn conversations for iterative code generation.")
+	fmt.Println("Type 'exit' or 'quit' to end the session.")
+	fmt.Println()
+
+	// Initialize database
+	db, err := storage.NewDatabase("copilot.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	// Create context builder with API key
+	config := ai.DefaultConfig()
+	config.LLMConfig.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+
+	if config.LLMConfig.APIKey == "" {
+		fmt.Println("❌ ANTHROPIC_API_KEY not set!")
+		fmt.Println("   Please set the environment variable and try again.")
+		return
+	}
+
+	contextBuilder, err := ai.NewContextBuilder(db.GetDB(), config)
+	if err != nil {
+		log.Fatalf("Failed to create context builder: %v", err)
+	}
+
+	// Get conversation session info
+	sessionID := contextBuilder.GetConversationManager().GetSessionID()
+	fmt.Printf("Session ID: %s\n", sessionID)
+	fmt.Println()
+
+	ctx := context.Background()
+	turnNumber := 1
+
+	// Chat loop
+	for {
+		fmt.Printf("[Turn %d] Your request: ", turnNumber)
+
+		var userInput string
+		fmt.Scanln(&userInput)
+
+		// Check for exit
+		if strings.ToLower(userInput) == "exit" || strings.ToLower(userInput) == "quit" {
+			fmt.Println("\n👋 Ending chat session. Goodbye!")
+			break
+		}
+
+		if strings.TrimSpace(userInput) == "" {
+			continue
+		}
+
+		// Generate code
+		fmt.Println()
+		result, err := contextBuilder.GenerateCode(ctx, userInput)
+		if err != nil {
+			fmt.Printf("❌ Error: %v\n\n", err)
+			continue
+		}
+
+		// Display generated code (abbreviated)
+		fmt.Println()
+		fmt.Println("═══════════════════════════════════════════════════════")
+		fmt.Printf("📄 Generated: %s (%s)\n",
+			result.ParsedResponse.GeneratedCode.ClassName,
+			result.ParsedResponse.GeneratedCode.CodeType)
+		fmt.Println("═══════════════════════════════════════════════════════")
+
+		// Show first 20 lines
+		lines := strings.Split(result.ParsedResponse.GeneratedCode.Code, "\n")
+		previewLines := 20
+		if len(lines) < previewLines {
+			previewLines = len(lines)
+		}
+		for i := 0; i < previewLines; i++ {
+			fmt.Println(lines[i])
+		}
+		if len(lines) > previewLines {
+			fmt.Printf("\n... (%d more lines)\n", len(lines)-previewLines)
+		}
+		fmt.Println()
+
+		// Show metrics
+		fmt.Printf("⏱️  Time: %v | 💰 Cost: $%.4f | 📊 Tokens: %d\n",
+			result.TotalTime,
+			result.LLMResponse.Cost,
+			result.LLMResponse.InputTokens+result.LLMResponse.OutputTokens)
+		fmt.Println()
+
+		// Offer to save
+		fmt.Print("Save to file? (y/n): ")
+		var saveResponse string
+		fmt.Scanln(&saveResponse)
+
+		if strings.ToLower(saveResponse) == "y" {
+			codeWriter := ai.NewCodeWriter(".")
+			writeResult, err := codeWriter.WriteCodeInteractive(result.ParsedResponse.GeneratedCode)
+			if err != nil {
+				fmt.Printf("❌ Failed to save: %v\n", err)
+			} else {
+				fmt.Printf("✅ Saved to: %s\n", writeResult.FilePath)
+			}
+		}
+
+		fmt.Println()
+		fmt.Println("────────────────────────────────────────────────────────")
+		fmt.Println()
+
+		turnNumber++
+	}
+
+	// Show session summary
+	messageCount, _ := contextBuilder.GetConversationManager().GetMessageCount()
+	fmt.Println()
+	fmt.Println("═══════════════════════════════════════════════════════")
+	fmt.Println("📊 Session Summary")
+	fmt.Println("═══════════════════════════════════════════════════════")
+	fmt.Printf("  Total turns:    %d\n", turnNumber-1)
+	fmt.Printf("  Messages saved: %d\n", messageCount)
+	fmt.Printf("  Session ID:     %s\n", sessionID)
+	fmt.Println()
 }

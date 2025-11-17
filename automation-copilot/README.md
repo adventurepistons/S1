@@ -97,42 +97,84 @@ This creates:
 
 ### Step 3: Generate Code
 
+**Option A: Automatic Generation (with Claude API)**
+
 ```bash
-# Generate test code
+# Set your API key
+export ANTHROPIC_API_KEY="your-key-here"
+
+# Generate code automatically
 ./copilot generate "Create a test for login with valid credentials"
 ```
 
+The system will:
+1. Build context (retrieval, examples, conversation history)
+2. Call Claude API automatically
+3. Parse and validate the generated code
+4. Display the code and offer to save to file
+
 Output:
 ```
-🤖 Building context for code generation...
-   Request: Create a test for login with valid credentials
-   [1/6] Analyzing request...
-   ✓ Intent: create_test, Task: functional_test
-   [2/6] Retrieving relevant code...
-   ✓ Retrieved 5 relevant chunks (avg score: 0.82)
-   [3/6] Selecting examples...
-   ✓ Selected 4 examples (3 positive, 1 negative)
-   [4/6] Loading conversation history...
-   ✓ Loaded 0 previous messages
-   [5/6] Assembling prompt...
-   ✓ Prompt assembled: 6100 tokens (3500 cached, 2600 dynamic)
-   ✓ Estimated cost: $0.0118
-   [6/6] Saving to conversation...
-   ✅ Context built in 1.2s
+🤖 Calling Claude API...
+   Model: claude-sonnet-4.5-20250929
+   ✓ Response received in 3.2s
+   ✓ Tokens: 6100 input (3500 cached), 452 output
+   ✓ Actual cost: $0.0118
 
-📋 Generated Prompt for LLM
-[Complete prompt ready for Claude/GPT...]
+📄 Generated Code
+Class: LoginTest
+Type: test
+Package: com.example.tests
 
-📊 Metrics
-  Retrieval Time:        245ms
-  Retrieved Chunks:      5
-  Average Relevance:     0.82
-  Total Tokens:          6100
-  Cached Tokens:         3500 (57.4%)
-  Estimated Cost:        $0.0118
+[Complete generated Java code...]
+
+📊 Generation Metrics
+  Total Time:            5.8s
+  Context Building:      2.1s
+  LLM Latency:           3.2s
+  Retrieved Chunks:      5 (avg relevance: 0.82)
+  Input Tokens:          6100 (3500 cached)
+  Output Tokens:         452
+  Actual Cost:           $0.0118
+
+💾 Save Code
+Suggested path: com/example/tests/LoginTest.java
+Save to file? (y/n):
 ```
 
-Copy the prompt to Claude.ai or use the API to generate code!
+**Option B: Prompt Only (no API key)**
+
+```bash
+# Without API key - just builds the prompt
+./copilot generate "Create a test for login with valid credentials"
+```
+
+Outputs the complete prompt for manual use with Claude.ai or ChatGPT.
+
+**Option C: Interactive Chat Mode**
+
+```bash
+# Multi-turn conversations for iterative refinement
+export ANTHROPIC_API_KEY="your-key-here"
+./copilot chat
+```
+
+Example session:
+```
+[Turn 1] Your request: create test for login
+📄 Generated: LoginTest (test)
+[... code displayed ...]
+Save to file? (y/n): y
+✅ Saved to: com/example/tests/LoginTest.java
+
+[Turn 2] Your request: add test for invalid password
+📄 Generated: LoginTest (test)
+[... updated code with both tests ...]
+Save to file? (y/n): y
+
+[Turn 3] Your request: exit
+👋 Ending chat session. Goodbye!
+```
 
 ## 📖 Commands
 
@@ -165,10 +207,14 @@ Copy the prompt to Claude.ai or use the API to generate code!
 # Build AI indexes (one-time)
 ./copilot build-index
 
-# Generate code
+# Generate code (automatic with ANTHROPIC_API_KEY, or prompt-only without)
+export ANTHROPIC_API_KEY="your-key-here"
 ./copilot generate "create test for login"
 ./copilot generate "add page object for dashboard"
 ./copilot generate "add explicit wait for submit button"
+
+# Interactive chat mode (multi-turn conversations)
+./copilot chat
 
 # View statistics
 ./copilot stats
