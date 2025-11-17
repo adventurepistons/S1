@@ -30,6 +30,29 @@
   "contributes": {
     "commands": [
       {
+        "command": "testCopilot.signIn",
+        "title": "Sign In",
+        "category": "Test Copilot",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "testCopilot.signOut",
+        "title": "Sign Out",
+        "category": "Test Copilot",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "testCopilot.showAccount",
+        "title": "Account",
+        "category": "Test Copilot",
+        "icon": "$(account)"
+      },
+      {
+        "command": "testCopilot.switchMode",
+        "title": "Switch API Mode",
+        "category": "Test Copilot"
+      },
+      {
         "command": "testCopilot.generate",
         "title": "Generate Test Code",
         "category": "Test Copilot"
@@ -147,6 +170,7 @@
     "@vscode/vsce": "^2.19.0"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^9.0.1",
+    "firebase": "^10.7.1"
   }
 }
