@@ -1,0 +1,152 @@
+{
+  "name": "test-automation-copilot",
+  "displayName": "Test Automation Copilot",
+  "description": "AI-powered test automation code generation for Selenium/Java",
+  "version": "1.0.0",
+  "publisher": "adventurepistons",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Testing"
+  ],
+  "keywords": [
+    "selenium",
+    "test automation",
+    "ai",
+    "code generation",
+    "testing",
+    "java"
+  ],
+  "activationEvents": [
+    "onLanguage:java",
+    "onCommand:testCopilot.generate",
+    "onCommand:testCopilot.chat",
+    "onCommand:testCopilot.buildIndex"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "testCopilot.generate",
+        "title": "Generate Test Code",
+        "category": "Test Copilot"
+      },
+      {
+        "command": "testCopilot.chat",
+        "title": "Open Chat",
+        "category": "Test Copilot",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "testCopilot.buildIndex",
+        "title": "Build Index",
+        "category": "Test Copilot"
+      },
+      {
+        "command": "testCopilot.showStats",
+        "title": "Show Statistics",
+        "category": "Test Copilot"
+      },
+      {
+        "command": "testCopilot.generateForClass",
+        "title": "Generate Test for This Class",
+        "category": "Test Copilot"
+      }
+    ],
+    "configuration": {
+      "title": "Test Automation Copilot",
+      "properties": {
+        "testCopilot.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic API Key for Claude",
+          "order": 1
+        },
+        "testCopilot.model": {
+          "type": "string",
+          "default": "claude-sonnet-4.5-20250929",
+          "enum": [
+            "claude-sonnet-4.5-20250929",
+            "claude-sonnet-3.5-20241022",
+            "claude-opus-4-20250514"
+          ],
+          "description": "Claude model to use",
+          "order": 2
+        },
+        "testCopilot.maxTokens": {
+          "type": "number",
+          "default": 4000,
+          "description": "Maximum tokens for generation",
+          "order": 3
+        },
+        "testCopilot.showCost": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show cost in status bar",
+          "order": 4
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "testCopilot",
+          "title": "Test Copilot",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "testCopilot": [
+        {
+          "id": "testCopilot.chatView",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "testCopilot.generateForClass",
+          "when": "editorLangId == java",
+          "group": "testCopilot@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "testCopilot.generate",
+          "when": "editorLangId == java"
+        },
+        {
+          "command": "testCopilot.generateForClass",
+          "when": "editorLangId == java"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package",
+    "build-server": "cd ../automation-copilot && go build -o ../vscode-extension/bin/copilot-lsp cmd/lsp-server/main.go"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.19.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
