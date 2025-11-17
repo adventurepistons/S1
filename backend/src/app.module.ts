@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
 import { SharedModule } from './shared/shared.module';
+import { TestsModule } from './tests/tests.module';
 
 @Module({
   imports: [
@@ -36,8 +37,8 @@ import { SharedModule } from './shared/shared.module';
     SharedModule,
     StorageModule,
     AuthModule,
-    // AIModule will be added next
-    // TestsModule will be added in Phase 2
+    TestsModule, // ✅ Phase 2: Test Execution
+    // AIModule will be added next (Phase 3)
   ],
   controllers: [],
   providers: [],
