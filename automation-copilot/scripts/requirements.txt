@@ -1,0 +1,14 @@
+# Local Embedding Service Dependencies
+# Zero-cost alternative to OpenAI/Anthropic embeddings
+
+# Core embedding model
+sentence-transformers==2.2.2
+
+# Web service framework
+flask==3.0.0
+
+# Numerical operations
+numpy==1.24.3
+
+# Optional: for better performance
+torch==2.1.0

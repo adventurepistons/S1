@@ -254,14 +254,21 @@ CREATE TABLE IF NOT EXISTS coding_patterns (
 CREATE TABLE IF NOT EXISTS pattern_examples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pattern_type TEXT NOT NULL,
+    task_type TEXT NOT NULL,
     example_code TEXT NOT NULL,
+    explanation TEXT,
     file_path TEXT,
     line_start INTEGER,
     line_end INTEGER,
-    frequency INTEGER DEFAULT 1
+    frequency INTEGER DEFAULT 1,
+    is_anti_pattern BOOLEAN DEFAULT 0,
+    embedding BLOB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_pattern_examples_type ON pattern_examples(pattern_type);
+CREATE INDEX IF NOT EXISTS idx_pattern_examples_task_type ON pattern_examples(task_type);
+CREATE INDEX IF NOT EXISTS idx_pattern_examples_anti_pattern ON pattern_examples(is_anti_pattern);
 
 -- ============================================================================
 -- KNOWLEDGE GRAPH TABLES
@@ -307,3 +314,67 @@ CREATE TABLE IF NOT EXISTS parsing_errors (
 );
 
 CREATE INDEX IF NOT EXISTS idx_parsing_errors_file_path ON parsing_errors(file_path);
+
+-- ============================================================================
+-- CONTEXT BUILDER TABLES (AI-POWERED CODE GENERATION)
+-- ============================================================================
+
+-- Chunks table (for cAST-based chunking with embeddings)
+CREATE TABLE IF NOT EXISTS chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_type TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    enriched_content TEXT,
+    bm25_tokens TEXT,
+    embedding BLOB,
+    token_count INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(chunk_type, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_type ON chunks(chunk_type);
+CREATE INDEX IF NOT EXISTS idx_chunks_entity ON chunks(entity_id);
+
+-- BM25 statistics table (for keyword-based retrieval)
+CREATE TABLE IF NOT EXISTS bm25_stats (
+    term TEXT PRIMARY KEY,
+    document_frequency INTEGER,
+    idf REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bm25_stats_df ON bm25_stats(document_frequency);
+
+-- Retrieval cache table (for performance optimization)
+CREATE TABLE IF NOT EXISTS retrieval_cache (
+    query_hash TEXT PRIMARY KEY,
+    retrieved_chunk_ids TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Conversation messages (for multi-turn context)
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    code TEXT,
+    metadata TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_session ON conversation_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_timestamp ON conversation_messages(timestamp);
+
+-- Conversation sessions (for tracking user sessions)
+CREATE TABLE IF NOT EXISTS conversation_sessions (
+    session_id TEXT PRIMARY KEY,
+    project_root TEXT NOT NULL,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    message_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'active'
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_sessions_project ON conversation_sessions(project_root);
+CREATE INDEX IF NOT EXISTS idx_conversation_sessions_status ON conversation_sessions(status);
