@@ -566,3 +566,92 @@ export class CoreClient {
     }
 }
 
+
+    // ===== API Testing Methods =====
+
+    /**
+     * Save API test definition
+     */
+    public async saveApiTest(test: any): Promise<void> {
+        try {
+            await this.axiosClient.post('/api/v1/api-tests/save', { test });
+        } catch (error) {
+            throw this.handleError(error, 'Failed to save API test');
+        }
+    }
+
+    /**
+     * Get API test definition by ID
+     */
+    public async getApiTest(testId: string): Promise<any> {
+        try {
+            const response = await this.axiosClient.get(`/api/v1/api-tests/${testId}`);
+            return response.data.test;
+        } catch (error) {
+            throw this.handleError(error, 'Failed to get API test');
+        }
+    }
+
+    /**
+     * Get all API tests for a project
+     */
+    public async getApiTestsByProject(projectId: string): Promise<any[]> {
+        try {
+            const response = await this.axiosClient.get(`/api/v1/api-tests/project/${projectId}`);
+            return response.data.tests || [];
+        } catch (error) {
+            throw this.handleError(error, 'Failed to get API tests');
+        }
+    }
+
+    /**
+     * Delete API test definition
+     */
+    public async deleteApiTest(testId: string): Promise<void> {
+        try {
+            await this.axiosClient.delete(`/api/v1/api-tests/${testId}`);
+        } catch (error) {
+            throw this.handleError(error, 'Failed to delete API test');
+        }
+    }
+
+    /**
+     * Save API test result
+     */
+    public async saveApiTestResult(result: any): Promise<void> {
+        try {
+            await this.axiosClient.post('/api/v1/api-tests/results/save', result);
+        } catch (error) {
+            throw this.handleError(error, 'Failed to save API test result');
+        }
+    }
+
+    /**
+     * Get API test results
+     */
+    public async getApiTestResults(testId: string, limit: number = 50): Promise<any[]> {
+        try {
+            const response = await this.axiosClient.post('/api/v1/api-tests/results/list', {
+                testId,
+                limit
+            });
+            return response.data.results || [];
+        } catch (error) {
+            throw this.handleError(error, 'Failed to get API test results');
+        }
+    }
+
+    /**
+     * Get API test statistics
+     */
+    public async getApiTestStats(projectId: string): Promise<any> {
+        try {
+            const response = await this.axiosClient.get('/api/v1/api-tests/stats', {
+                params: { projectId }
+            });
+            return response.data;
+        } catch (error) {
+            throw this.handleError(error, 'Failed to get API test stats');
+        }
+    }
+}

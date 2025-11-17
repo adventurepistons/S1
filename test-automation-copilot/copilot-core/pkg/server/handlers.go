@@ -490,3 +490,145 @@ func (s *Server) getRecordingStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, stats)
 }
+
+// ===== API Testing Handlers =====
+
+// SaveApiTestRequest represents a request to save an API test definition
+type SaveApiTestRequest struct {
+	Test *database.ApiTestDefinition `json:"test" binding:"required"`
+}
+
+// GetApiTestResultsRequest represents a request to get API test results
+type GetApiTestResultsRequest struct {
+	TestID string `json:"testId" binding:"required"`
+	Limit  int    `json:"limit"`
+}
+
+// saveApiTest saves an API test definition
+func (s *Server) saveApiTest(c *gin.Context) {
+	var req SaveApiTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.db.SaveApiTestDefinition(req.Test); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "API test definition saved successfully",
+		"testId":  req.Test.ID,
+		"name":    req.Test.Name,
+		"type":    req.Test.Type,
+	})
+}
+
+// getApiTest retrieves a specific API test definition
+func (s *Server) getApiTest(c *gin.Context) {
+	testID := c.Param("id")
+
+	test, err := s.db.GetApiTestDefinition(testID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"test": test,
+	})
+}
+
+// getApiTestsByProject retrieves all API tests for a project
+func (s *Server) getApiTestsByProject(c *gin.Context) {
+	projectID := c.Param("projectId")
+
+	tests, err := s.db.GetApiTestDefinitionsByProject(projectID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"tests": tests,
+		"count": len(tests),
+	})
+}
+
+// deleteApiTest deletes an API test definition
+func (s *Server) deleteApiTest(c *gin.Context) {
+	testID := c.Param("id")
+
+	if err := s.db.DeleteApiTestDefinition(testID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "API test definition deleted successfully",
+	})
+}
+
+// saveApiTestResult saves an API test execution result
+func (s *Server) saveApiTestResult(c *gin.Context) {
+	var result database.ApiTestResult
+	if err := c.ShouldBindJSON(&result); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.db.SaveApiTestResult(&result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "API test result saved successfully",
+		"resultId":   result.ID,
+		"passed":     result.Passed,
+		"duration":   result.Duration,
+		"statusCode": result.StatusCode,
+	})
+}
+
+// getApiTestResults retrieves results for a specific API test
+func (s *Server) getApiTestResults(c *gin.Context) {
+	var req GetApiTestResultsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Limit == 0 {
+		req.Limit = 50
+	}
+
+	results, err := s.db.GetApiTestResultsByTestID(req.TestID, req.Limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"results": results,
+		"count":   len(results),
+	})
+}
+
+// getApiTestStats returns statistics about API tests
+func (s *Server) getApiTestStats(c *gin.Context) {
+	projectID := c.Query("projectId")
+	if projectID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "projectId is required"})
+		return
+	}
+
+	stats, err := s.db.GetApiTestStats(projectID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}

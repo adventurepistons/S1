@@ -137,6 +137,18 @@ func (s *Server) setupRoutes() {
 			recordings.DELETE("/:id", s.deleteRecordingSession)
 			recordings.GET("/stats", s.getRecordingStats)
 		}
+
+		// API Testing
+		apiTests := v1.Group("/api-tests")
+		{
+			apiTests.POST("/save", s.saveApiTest)
+			apiTests.GET("/:id", s.getApiTest)
+			apiTests.GET("/project/:projectId", s.getApiTestsByProject)
+			apiTests.DELETE("/:id", s.deleteApiTest)
+			apiTests.POST("/results/save", s.saveApiTestResult)
+			apiTests.POST("/results/list", s.getApiTestResults)
+			apiTests.GET("/stats", s.getApiTestStats)
+		}
 	}
 
 	// WebSocket endpoint for streaming
