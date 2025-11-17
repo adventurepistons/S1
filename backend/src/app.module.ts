@@ -6,6 +6,9 @@ import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
 import { SharedModule } from './shared/shared.module';
 import { TestsModule } from './tests/tests.module';
+import { VisualModule } from './visual/visual.module';
+import { ApiTestingModule } from './api-testing/api-testing.module';
+import { CiCdModule } from './ci-cd/ci-cd.module';
 
 @Module({
   imports: [
@@ -38,7 +41,10 @@ import { TestsModule } from './tests/tests.module';
     StorageModule,
     AuthModule,
     TestsModule, // ✅ Phase 2: Test Execution
-    // AIModule will be added next (Phase 3)
+    VisualModule, // ✅ Phase 3: Visual Testing
+    ApiTestingModule, // ✅ Phase 3: API Testing
+    CiCdModule, // ✅ Phase 3: CI/CD Integration
+    // AIModule will be added later
   ],
   controllers: [],
   providers: [],
