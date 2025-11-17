@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -70,9 +71,27 @@ func NewServer(config ServerConfig) (*Server, error) {
 		port:             port,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
-				// Allow all origins for development
-				// TODO: Restrict in production
-				return true
+				origin := r.Header.Get("Origin")
+
+				// Allow VSCode webview origins
+				if strings.HasPrefix(origin, "vscode-webview://") {
+					return true
+				}
+
+				// Allow localhost for development
+				allowedOrigins := map[string]bool{
+					"http://localhost:3000":  true,
+					"http://127.0.0.1:3000":  true,
+					"http://localhost:8080":  true,
+					"http://127.0.0.1:8080":  true,
+				}
+
+				if allowedOrigins[origin] {
+					return true
+				}
+
+				log.Printf("⚠️  Rejected WebSocket origin: %s", origin)
+				return false
 			},
 		},
 	}

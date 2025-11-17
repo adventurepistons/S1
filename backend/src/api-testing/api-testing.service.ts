@@ -42,6 +42,49 @@ export interface ApiTestResult {
   error?: string;
 }
 
+// URL validation for SSRF prevention
+const BLOCKED_HOSTS = [
+  'localhost', '127.0.0.1', '0.0.0.0', '::1',
+  '169.254.169.254',  // AWS/GCP metadata
+  'metadata.google.internal',
+  /^10\./,
+  /^172\.(1[6-9]|2[0-9]|3[01])\./,
+  /^192\.168\./,
+  /^fd[0-9a-f]{2}:/i  // IPv6 private
+];
+
+function validateApiTestUrl(url: string): void {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(url);
+  } catch (e) {
+    throw new BadRequestException('Invalid URL format');
+  }
+
+  // Block non-HTTP(S) protocols
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new BadRequestException('Only HTTP and HTTPS protocols are allowed');
+  }
+
+  // Block private IPs and localhost
+  const hostname = parsed.hostname.toLowerCase();
+  for (const blocked of BLOCKED_HOSTS) {
+    if (typeof blocked === 'string') {
+      if (hostname === blocked) {
+        throw new BadRequestException(`Access to ${hostname} is forbidden (SSRF protection)`);
+      }
+    } else if (blocked.test(hostname)) {
+      throw new BadRequestException(`Access to private IP ranges is forbidden (SSRF protection)`);
+    }
+  }
+
+  // Require HTTPS in production
+  if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
+    throw new BadRequestException('Only HTTPS URLs are allowed in production');
+  }
+}
+
 @Injectable()
 export class ApiTestingService {
   private readonly logger = new Logger(ApiTestingService.name);
@@ -53,6 +96,9 @@ export class ApiTestingService {
    */
   async executeRestTest(test: ApiTestDefinition): Promise<ApiTestResult> {
     const startTime = Date.now();
+
+    // ✅ VALIDATE URL BEFORE MAKING REQUEST
+    validateApiTestUrl(test.url);
 
     try {
       // Build request config
@@ -130,6 +176,9 @@ export class ApiTestingService {
    */
   async executeGraphQLTest(test: ApiTestDefinition): Promise<ApiTestResult> {
     const startTime = Date.now();
+
+    // ✅ VALIDATE URL BEFORE MAKING REQUEST
+    validateApiTestUrl(test.url);
 
     try {
       // Build GraphQL request
@@ -240,6 +289,9 @@ export class ApiTestingService {
    * Generate API tests from OpenAPI/Swagger spec
    */
   async generateTestsFromOpenAPI(specUrl: string): Promise<ApiTestDefinition[]> {
+    // ✅ VALIDATE URL BEFORE FETCHING
+    validateApiTestUrl(specUrl);
+
     try {
       // Fetch OpenAPI spec
       const response = await axios.get(specUrl);
@@ -278,6 +330,9 @@ export class ApiTestingService {
    * Generate GraphQL tests from schema introspection
    */
   async generateTestsFromGraphQL(url: string): Promise<ApiTestDefinition[]> {
+    // ✅ VALIDATE URL BEFORE FETCHING
+    validateApiTestUrl(url);
+
     try {
       // Introspection query
       const introspectionQuery = `

@@ -55,6 +55,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.0/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
     <style>
         body {
             padding: 10px;
@@ -228,7 +229,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             header.textContent = role === 'user' ? 'You' : 'Copilot';
 
             messageDiv.appendChild(header);
-            contentDiv.innerHTML = marked.parse(content);
+            contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(content), {
+                ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'h1', 'h2', 'h3', 'h4', 'blockquote'],
+                ALLOWED_ATTR: ['href', 'class', 'id'],
+                FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
+                FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
+            });
             messageDiv.appendChild(contentDiv);
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -273,7 +279,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             const contentDiv = document.getElementById('streaming-content');
             if (contentDiv) {
                 // Render markdown in real-time
-                contentDiv.innerHTML = marked.parse(streamingContent);
+                contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(streamingContent), {
+                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'h1', 'h2', 'h3', 'h4', 'blockquote'],
+                    ALLOWED_ATTR: ['href', 'class', 'id'],
+                    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
+                    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
+                });
 
                 // Apply syntax highlighting
                 contentDiv.querySelectorAll('pre code').forEach((block) => {
@@ -298,7 +309,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             // Final render
             const contentDiv = document.getElementById('streaming-content');
             if (contentDiv) {
-                contentDiv.innerHTML = marked.parse(streamingContent);
+                contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(streamingContent), {
+                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'h1', 'h2', 'h3', 'h4', 'blockquote'],
+                    ALLOWED_ATTR: ['href', 'class', 'id'],
+                    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
+                    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover']
+                });
                 contentDiv.querySelectorAll('pre code').forEach((block) => {
                     hljs.highlightElement(block);
                 });
