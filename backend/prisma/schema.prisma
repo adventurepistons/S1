@@ -30,13 +30,15 @@ model User {
   isActive         Boolean   @default(true) @map("is_active")
 
   // Relations
-  oauthProviders  OAuthProvider[]
-  quotas          UserQuota[]
-  projects        Project[]
-  conversations   Conversation[]
-  executions      TestExecution[]
-  apiKeys         ApiKey[]
-  teamMemberships TeamMember[]
+  oauthProviders       OAuthProvider[]
+  quotas               UserQuota[]
+  projects             Project[]
+  conversations        Conversation[]
+  executions           TestExecution[]
+  apiKeys              ApiKey[]
+  teamMemberships      TeamMember[]
+  webhookConfigs       WebhookConfig[]
+  notificationConfigs  NotificationConfig[]
 
   @@index([email])
   @@index([tier])
@@ -126,6 +128,7 @@ model Project {
   conversations    Conversation[]
   executions       TestExecution[]
   visualBaselines  VisualBaseline[]
+  apiTests         ApiTestDefinition[]
   flakyTests       FlakyTest[]
 
   @@unique([userId, name])
@@ -334,6 +337,120 @@ model VisualComparison {
   @@index([baselineId])
   @@index([executionId])
   @@map("visual_comparisons")
+}
+
+// ============================================================================
+// API TESTING
+// ============================================================================
+
+model ApiTestDefinition {
+  id          String      @id @default(uuid())
+  projectId   String      @map("project_id")
+  name        String
+  description String?
+  type        ApiTestType // 'REST' or 'GRAPHQL'
+  method      String?     // HTTP method for REST (GET, POST, etc.)
+  url         String
+  headers     Json?       // Key-value pairs
+  body        Json?       // Request body
+  query       String?     @db.Text // GraphQL query
+  variables   Json?       // GraphQL variables
+  assertions  Json?       // Expected response validation rules
+  timeout     Int         @default(30000)
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  results ApiTestResult[]
+
+  @@index([projectId])
+  @@index([type])
+  @@map("api_test_definitions")
+}
+
+enum ApiTestType {
+  REST
+  GRAPHQL
+}
+
+model ApiTestResult {
+  id             String   @id @default(uuid())
+  testId         String   @map("test_id")
+  executionId    String?  @map("execution_id") // Optional link to TestExecution
+  passed         Boolean
+  duration       Int      // milliseconds
+  statusCode     Int?     @map("status_code")
+  responseBody   Json?    @map("response_body")
+  responseHeaders Json?   @map("response_headers")
+  errorMessage   String?  @map("error_message") @db.Text
+  assertions     Json?    // Results of each assertion
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  test ApiTestDefinition @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  @@index([testId])
+  @@index([executionId])
+  @@index([createdAt(sort: Desc)])
+  @@map("api_test_results")
+}
+
+// ============================================================================
+// CI/CD CONFIGURATION
+// ============================================================================
+
+model WebhookConfig {
+  id           String        @id @default(uuid())
+  projectId    String?       @map("project_id") // Optional - can be user-level
+  userId       String        @map("user_id")
+  provider     WebhookProvider
+  webhookUrl   String        @map("webhook_url") // GitHub/GitLab webhook endpoint
+  secret       String        // Encrypted webhook secret for signature verification
+  events       Json          // Array of events to listen for (e.g., ["pull_request", "push"])
+  isActive     Boolean       @default(true) @map("is_active")
+  lastTriggered DateTime?    @map("last_triggered")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([provider])
+  @@map("webhook_configs")
+}
+
+enum WebhookProvider {
+  GITHUB
+  GITLAB
+  BITBUCKET
+}
+
+model NotificationConfig {
+  id          String             @id @default(uuid())
+  projectId   String?            @map("project_id") // Optional - can be user-level
+  userId      String             @map("user_id")
+  type        NotificationType
+  webhookUrl  String             @map("webhook_url")
+  events      Json               // Array of events to notify (e.g., ["test_completed", "test_failed"])
+  isActive    Boolean            @default(true) @map("is_active")
+  metadata    Json?              // Additional config (e.g., channel name, mentions)
+  lastSent    DateTime?          @map("last_sent")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@map("notification_configs")
+}
+
+enum NotificationType {
+  SLACK
+  TEAMS
+  DISCORD
+  WEBHOOK
+  EMAIL
 }
 
 // ============================================================================
