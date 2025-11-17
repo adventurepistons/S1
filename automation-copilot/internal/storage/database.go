@@ -60,6 +60,11 @@ func (d *Database) Close() error {
 	return d.db.Close()
 }
 
+// GetDB returns the underlying sql.DB connection
+func (d *Database) GetDB() *sql.DB {
+	return d.db
+}
+
 // SaveClassData saves complete class data to database
 func (d *Database) SaveClassData(classData *models.ClassData) error {
 	tx, err := d.db.Begin()

@@ -137,7 +137,7 @@ Complete CRUD operations:
 
 ### 5. CLI Tool (`cmd/copilot/main.go`)
 
-Three commands:
+Four commands:
 
 **parse** - Parse and display extracted data:
 ```bash
@@ -154,7 +154,55 @@ Three commands:
 ./copilot query LoginPage
 ```
 
-### 6. Test Samples (`test_samples/`)
+**detect** - Detect framework and coding patterns:
+```bash
+./copilot detect test_samples/
+```
+
+### 6. Framework Detector (`internal/detector/`)
+
+**Framework Detection** - Identifies framework combination:
+- Parses `pom.xml` for dependencies
+- Analyzes imports from database
+- Searches for configuration files (testng.xml, .feature files)
+- Detects architecture patterns (POM, PageFactory, Screenplay)
+
+**Supported Framework Combinations**:
+1. Selenium + TestNG
+2. Selenium + TestNG + Cucumber
+3. Selenium + JUnit 5
+4. Selenium + JUnit 5 + Cucumber
+5. Selenium + Serenity BDD
+6. Selenium + Rest-Assured
+
+**Pattern Detection** - Learns project coding style:
+- Naming conventions (test methods, page objects, WebElements)
+- Test structure (AAA pattern vs Given-When-Then)
+- Wait strategies (explicit vs implicit, default timeouts)
+- Assertion style (TestNG, JUnit, AssertJ, with/without messages)
+- Data patterns (DataProviders, CSV, Excel)
+
+**Example Output**:
+```
+Framework Combination:
+  Selenium 4.15.0 + TestNG
+
+Naming Conventions:
+  Test Methods:      testActionWithCondition
+  Page Objects:      Page
+  WebElements:       camelCase with 'Field' suffix
+  Methods:           verb-based (click, enter, etc.)
+
+Wait Strategies:
+  Preferred Type:    explicit
+  Default Timeout:   10 seconds
+
+Assertions:
+  Library:           TestNG
+  Uses Messages:     true
+```
+
+### 7. Test Samples (`test_samples/`)
 
 **LoginPage.java** - Page Object example with:
 - 5 @FindBy WebElements (id, css, xpath, name selectors)
@@ -275,37 +323,58 @@ CREATE TABLE relationships (
 automation-copilot/
 ├── cmd/
 │   └── copilot/
-│       └── main.go                 # CLI entry point
+│       └── main.go                      # CLI entry point (300+ lines)
 ├── internal/
 │   ├── parser/
-│   │   └── java_parser.go          # Tree-sitter AST parser (700+ lines)
+│   │   └── java_parser.go               # Tree-sitter AST parser (700+ lines)
+│   ├── detector/
+│   │   ├── framework_detector.go        # Framework detection (400+ lines)
+│   │   └── pattern_detector.go          # Pattern learning (500+ lines)
 │   ├── storage/
-│   │   ├── database.go             # SQLite operations (500+ lines)
-│   │   └── schema.sql              # 25+ tables
-│   └── extractor/                  # (Future: extraction pipeline)
+│   │   ├── database.go                  # SQLite operations (500+ lines)
+│   │   └── schema.sql                   # 25+ tables
+│   └── graph/                           # (Future: knowledge graph)
 ├── pkg/
 │   └── models/
-│       ├── class_data.go           # Complete data models
-│       └── framework_config.go     # Framework detection models
+│       ├── class_data.go                # Complete data models
+│       └── framework_config.go          # Framework detection models
 ├── test_samples/
-│   ├── LoginPage.java              # Page object example
-│   └── LoginTest.java              # Test class example
+│   ├── LoginPage.java                   # Page object example
+│   ├── LoginTest.java                   # Test class example
+│   ├── pom.xml                          # Maven configuration
+│   └── testng.xml                       # TestNG suite
 ├── go.mod
 └── README.md
 ```
 
 ## Implementation Status
 
-### ✅ Completed (Phase 1a)
+### ✅ Completed (Phase 1a + 1b)
 
+**Core Understanding Engine:**
 - [x] Complete data models (ClassData, Field, Method, Annotation)
 - [x] Tree-sitter Java parser with 100% extraction
 - [x] SQLite schema with 25+ tables
 - [x] Database layer with save/query operations
-- [x] CLI tool with parse/index/query commands
-- [x] Test samples (LoginPage, LoginTest)
+- [x] CLI tool with parse/index/query/detect commands
+- [x] Test samples (LoginPage, LoginTest, pom.xml, testng.xml)
 
-### 📋 Next Steps (Phase 1b)
+**Framework Detection:**
+- [x] Framework detector for 6 combinations
+- [x] POM.xml parser for dependency detection
+- [x] Import analyzer for framework identification
+- [x] File structure scanner (testng.xml, .feature files)
+- [x] Architecture pattern detection (POM, PageFactory, Screenplay)
+
+**Pattern Learning:**
+- [x] Naming convention detection (tests, page objects, WebElements)
+- [x] Test structure detection (AAA vs Given-When-Then)
+- [x] Wait strategy analysis (explicit/implicit, timeouts)
+- [x] Assertion style detection (TestNG/JUnit/AssertJ)
+- [x] Data pattern detection (DataProviders, CSV, Excel)
+- [x] Pattern example extraction for code generation
+
+### 📋 Next Steps (Phase 2)
 
 1. **Build & Test** (pending dependency resolution)
    ```bash
@@ -315,34 +384,24 @@ automation-copilot/
    # Build binary
    go build -o copilot cmd/copilot/main.go
 
-   # Test parsing
-   ./copilot parse test_samples/LoginPage.java
+   # Test complete workflow
+   ./copilot index test_samples/LoginPage.java
    ./copilot index test_samples/LoginTest.java
+   ./copilot detect test_samples/
    ./copilot query LoginPage
    ```
 
-2. **Add Framework Detector** (`internal/detector/`)
-   - Detect which of 6 framework combinations
-   - Parse pom.xml for dependencies
-   - Scan for testng.xml, .feature files
-   - Determine architecture patterns
-
-3. **Add Pattern Detector** (`internal/detector/`)
-   - Learn naming conventions
-   - Detect wait strategies
-   - Identify assertion styles
-   - Extract pattern examples
-
-4. **Add Knowledge Graph** (`internal/graph/`)
-   - Build relationship graph
+2. **Add Knowledge Graph** (`internal/graph/`)
+   - Build relationship graph (EXTENDS, CALLS, USES)
    - Implement call graph resolution
-   - Create query engine
-   - Add traversal methods
+   - Create query engine with pattern matching
+   - Add graph traversal methods
 
-5. **Add Context Builder** (`internal/ai/`)
-   - Assemble complete context
-   - Build prompts for LLM
+3. **Add Context Builder** (`internal/ai/`)
+   - Assemble complete context from knowledge graph
+   - Build prompts for LLM with patterns
    - Integrate OpenAI/Claude APIs
+   - Implement code validation
 
 ## Dependencies
 
