@@ -1,0 +1,375 @@
+// Prisma Schema for Test Automation Copilot Backend
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTHENTICATION & USERS
+// ============================================================================
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  passwordHash     String?   @map("password_hash")
+  displayName      String?   @map("display_name")
+  avatarUrl        String?   @map("avatar_url")
+  tier             Tier      @default(FREE)
+  apiKeyMode       ApiMode   @default(BYOK) @map("api_key_mode")
+  stripeCustomerId String?   @map("stripe_customer_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  lastLoginAt      DateTime? @map("last_login_at")
+  emailVerified    Boolean   @default(false) @map("email_verified")
+  isActive         Boolean   @default(true) @map("is_active")
+
+  // Relations
+  oauthProviders  OAuthProvider[]
+  quotas          UserQuota[]
+  projects        Project[]
+  conversations   Conversation[]
+  executions      TestExecution[]
+  apiKeys         ApiKey[]
+  teamMemberships TeamMember[]
+
+  @@index([email])
+  @@index([tier])
+  @@map("users")
+}
+
+enum Tier {
+  FREE
+  PRO
+  TEAM
+}
+
+enum ApiMode {
+  BYOK   // Bring Your Own Key
+  LOCAL  // Local LLM (Ollama)
+  MANAGED // Managed API (we provide)
+}
+
+model OAuthProvider {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  provider       String   // 'google', 'github'
+  providerUserId String   @map("provider_user_id")
+  accessToken    String?  @map("access_token")
+  refreshToken   String?  @map("refresh_token")
+  expiresAt      DateTime? @map("expires_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@map("oauth_providers")
+}
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  keyHash   String   @unique @map("key_hash") // SHA-256 hash of API key
+  keyPrefix String   @map("key_prefix") // First 8 chars for display (e.g., "sk-ant-...")
+  encrypted String   // AES-256-GCM encrypted actual key
+  lastUsed  DateTime? @map("last_used")
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  isActive  Boolean  @default(true) @map("is_active")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_keys")
+}
+
+model UserQuota {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  tool         String   // 'test-copilot', 'code-review', 'docs'
+  monthlyLimit Int      @default(-1) @map("monthly_limit") // -1 = unlimited
+  monthlyUsage Int      @default(0) @map("monthly_usage")
+  lastResetAt  DateTime @default(now()) @map("last_reset_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tool])
+  @@map("user_quotas")
+}
+
+// ============================================================================
+// PROJECTS
+// ============================================================================
+
+model Project {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  name          String
+  description   String?
+  repositoryUrl String?   @map("repository_url")
+  framework     String?   // 'selenium-java', 'playwright-ts', etc.
+  language      String?   // 'java', 'typescript', 'python'
+  indexed       Boolean   @default(false)
+  indexedAt     DateTime? @map("indexed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeIndex        CodeIndex[]
+  conversations    Conversation[]
+  executions       TestExecution[]
+  visualBaselines  VisualBaseline[]
+  flakyTests       FlakyTest[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([framework])
+  @@map("projects")
+}
+
+model CodeIndex {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  filePath    String   @map("file_path")
+  className   String?  @map("class_name")
+  methodName  String?  @map("method_name")
+  codeType    String?  @map("code_type") // 'test', 'page_object', 'helper'
+  codeContent String   @map("code_content") @db.Text
+  embedding   String?  @db.Text // JSON-encoded vector for semantic search
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([className])
+  @@index([codeType])
+  @@map("code_index")
+}
+
+// ============================================================================
+// CONVERSATIONS & MESSAGES
+// ============================================================================
+
+model Conversation {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  projectId String?  @map("project_id")
+  tool      String   // 'test-copilot', 'code-review', 'docs'
+  title     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project  Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  messages Message[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  role           Role
+  content        String   @db.Text
+  metadata       Json?    // {tokens: {input: 100, output: 50}, cost: 0.012}
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+enum Role {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+// ============================================================================
+// TEST EXECUTION & REPORTING
+// ============================================================================
+
+model TestExecution {
+  id           String           @id @default(uuid())
+  projectId    String           @map("project_id")
+  userId       String?          @map("user_id")
+  status       ExecutionStatus  @default(QUEUED)
+  environment  String?
+  browser      String?
+  headless     Boolean          @default(true)
+  parallel     Boolean          @default(false)
+  maxWorkers   Int              @default(1) @map("max_workers")
+  retryFailed  Int              @default(0) @map("retry_failed")
+  startedAt    DateTime?        @map("started_at")
+  completedAt  DateTime?        @map("completed_at")
+  duration     Int?             // in seconds
+  totalTests   Int?             @map("total_tests")
+  passedTests  Int?             @map("passed_tests")
+  failedTests  Int?             @map("failed_tests")
+  skippedTests Int?             @map("skipped_tests")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  results     TestResult[]
+  comparisons VisualComparison[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("test_executions")
+}
+
+enum ExecutionStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model TestResult {
+  id            String     @id @default(uuid())
+  executionId   String     @map("execution_id")
+  testName      String     @map("test_name")
+  className     String?    @map("class_name")
+  status        TestStatus
+  duration      Int?       // in milliseconds
+  retries       Int        @default(0)
+  errorMessage  String?    @map("error_message") @db.Text
+  stackTrace    String?    @map("stack_trace") @db.Text
+  screenshotUrl String?    @map("screenshot_url")
+  videoUrl      String?    @map("video_url")
+  logs          String?    @db.Text
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  execution TestExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([status])
+  @@index([testName])
+  @@map("test_results")
+}
+
+enum TestStatus {
+  PASSED
+  FAILED
+  SKIPPED
+}
+
+model FlakyTest {
+  id              String   @id @default(uuid())
+  projectId       String   @map("project_id")
+  testName        String   @map("test_name")
+  className       String?  @map("class_name")
+  flakyScore      Float    @map("flaky_score") // 0.00 to 1.00
+  totalRuns       Int      @default(0) @map("total_runs")
+  passedRuns      Int      @default(0) @map("passed_runs")
+  failedRuns      Int      @default(0) @map("failed_runs")
+  lastFailedAt    DateTime? @map("last_failed_at")
+  firstDetectedAt DateTime @default(now()) @map("first_detected_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, testName])
+  @@index([projectId])
+  @@index([flakyScore(sort: Desc)])
+  @@map("flaky_tests")
+}
+
+// ============================================================================
+// VISUAL TESTING
+// ============================================================================
+
+model VisualBaseline {
+  id             String   @id @default(uuid())
+  projectId      String   @map("project_id")
+  testName       String   @map("test_name")
+  viewportWidth  Int?     @map("viewport_width")
+  viewportHeight Int?     @map("viewport_height")
+  browser        String?
+  imageUrl       String   @map("image_url")
+  imageHash      String   @map("image_hash") // SHA-256 hash
+  approvedBy     String?  @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  project     Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  comparisons VisualComparison[]
+
+  @@unique([projectId, testName, viewportWidth, viewportHeight, browser])
+  @@index([projectId])
+  @@map("visual_baselines")
+}
+
+model VisualComparison {
+  id             String   @id @default(uuid())
+  baselineId     String   @map("baseline_id")
+  executionId    String   @map("execution_id")
+  screenshotUrl  String   @map("screenshot_url")
+  diffUrl        String?  @map("diff_url")
+  pixelDiff      Int?     @map("pixel_diff")
+  percentageDiff Float?   @map("percentage_diff")
+  threshold      Float    @default(0.05)
+  passed         Boolean?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  baseline  VisualBaseline @relation(fields: [baselineId], references: [id], onDelete: Cascade)
+  execution TestExecution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([baselineId])
+  @@index([executionId])
+  @@map("visual_comparisons")
+}
+
+// ============================================================================
+// TEAM FEATURES
+// ============================================================================
+
+model Team {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  ownerId   String   @map("owner_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members TeamMember[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String     @id @default(uuid())
+  teamId    String     @map("team_id")
+  userId    String     @map("user_id")
+  role      TeamRole   @default(MEMBER)
+  joinedAt  DateTime   @default(now()) @map("joined_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
