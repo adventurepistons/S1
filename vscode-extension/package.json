@@ -77,6 +77,12 @@
         "command": "testCopilot.generateForClass",
         "title": "Generate Test for This Class",
         "category": "Test Copilot"
+      },
+      {
+        "command": "testCopilot.executeTests",
+        "title": "Execute Tests",
+        "category": "Test Copilot",
+        "icon": "$(play)"
       }
     ],
     "configuration": {
@@ -171,6 +177,8 @@
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1",
-    "firebase": "^10.7.1"
+    "firebase": "^10.7.1",
+    "axios": "^1.6.5",
+    "socket.io-client": "^4.6.1"
   }
 }
