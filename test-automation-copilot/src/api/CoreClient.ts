@@ -21,6 +21,7 @@ export interface SearchResult {
     filePath: string;
     type: string;
     similarity: number;
+    lineNumber?: number;
 }
 
 export interface GenerationResult {
@@ -564,8 +565,6 @@ export class CoreClient {
 
         return `${pascalCase}Page`;
     }
-}
-
 
     // ===== API Testing Methods =====
 
